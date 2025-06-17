@@ -82,20 +82,20 @@ Respond ONLY in valid JSON like this:
         result = response.json()
         print("📄 Gemini raw response:", result)
 
-        if "candidates" in result:
-           gemini_text = result["candidates"][0]["content"]["parts"][0]["text"]
+      if "candidates" in result:
+    gemini_text = result["candidates"][0]["content"]["parts"][0]["text"]
 
-try:
-    parsed = json.loads(gemini_text)
-    return jsonify(parsed)
-except Exception as e:
-    return jsonify({
-        "error": "Invalid model output — could not parse JSON",
-        "raw": gemini_text,
-        "message": str(e)
-    }), 500
-        else:
-            return jsonify({"error": "No response or unclear result."}), 400
+    try:
+        parsed = json.loads(gemini_text)
+        return jsonify(parsed)
+    except Exception as e:
+        return jsonify({
+            "error": "Invalid model output — could not parse JSON",
+            "raw": gemini_text,
+            "message": str(e)
+        }), 500
+else:
+    return jsonify({"error": "No response or unclear result."}), 400
 
     except Exception as e:
         return jsonify({"error": "Request to Gemini API failed", "message": str(e)}), 500
