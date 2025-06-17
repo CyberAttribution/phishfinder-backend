@@ -26,7 +26,7 @@ def limit_remote_addr():
     window = 60  # seconds
     limit = 30   # max requests per IP per window
 
-    # Keep only recent requests
+    # Remove old requests from window
     rate_limits[ip] = [t for t in rate_limits[ip] if now - t < window]
     rate_limits[ip].append(now)
 
@@ -63,7 +63,6 @@ Respond ONLY in valid JSON like this:
 }}
 """
 
-    # Gemini API request setup
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": GEMINI_API_KEY
@@ -80,7 +79,6 @@ Respond ONLY in valid JSON like this:
     }
 
     try:
-        # Call Gemini API
         response = requests.post(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent",
             headers=headers,
@@ -97,6 +95,7 @@ Respond ONLY in valid JSON like this:
                 parsed = json.loads(gemini_text)
                 return jsonify(parsed)
             except Exception as e:
+                print("❌ JSON parsing error:", str(e))
                 return jsonify({
                     "error": "Invalid model output — could not parse JSON",
                     "raw": gemini_text,
@@ -106,7 +105,7 @@ Respond ONLY in valid JSON like this:
             return jsonify({"error": "No response candidates from Gemini"}), 400
 
     except Exception as e:
-        print("❌ Gemini request failed:", e)
+        print("❌ Gemini request failed:", str(e))
         return jsonify({
             "error": "Request to Gemini API failed",
             "message": str(e)
