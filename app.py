@@ -42,11 +42,14 @@ def home():
 
 @app.route("/check", methods=["POST"])
 def check():
+    print("🛠️ DEBUG: Entered /check route")
+
     try:
-        data = request.get_json()
-        print("🔥 /check endpoint was hit with:", data)
+        data = request.get_json(force=True, silent=True)
+        print("📥 DEBUG: Parsed JSON:", data)
 
         if not data or "domain" not in data:
+            print("❗ Missing domain key in data")
             return jsonify({"error": "Missing 'domain' field in request"}), 400
 
         prompt_text = data["domain"]
