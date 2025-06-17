@@ -95,11 +95,11 @@ Respond ONLY in valid JSON like this:
                 parsed = json.loads(gemini_text)
                 return jsonify(parsed)
             except Exception as e:
-                print("❌ JSON parsing error:", str(e))
+                print("❌ JSON parsing failed:", e)
                 return jsonify({
-                    "error": "Invalid model output — could not parse JSON",
-                    "raw": gemini_text,
-                    "message": str(e)
+                    "error": "Could not parse Gemini output as JSON",
+                    "raw_output": gemini_text,
+                    "exception": str(e)
                 }), 500
         else:
             return jsonify({"error": "No response candidates from Gemini"}), 400
