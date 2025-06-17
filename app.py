@@ -1,11 +1,11 @@
 from collections import defaultdict
 import time
+import os
+import json
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-import os
-import requests
-import json  # Needed for parsing Gemini response
 
 # Load environment variables
 load_dotenv()
@@ -26,14 +26,14 @@ def limit_remote_addr():
     window = 60  # seconds
     limit = 30   # max requests per IP per window
 
-    # Remove old requests from window
+    # Keep only recent requests
     rate_limits[ip] = [t for t in rate_limits[ip] if now - t < window]
     rate_limits[ip].append(now)
 
     if len(rate_limits[ip]) > limit:
         return jsonify({"error": "Too many requests"}), 429
 
-# Load Gemini API key
+# Load Gemini API key from environment
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 @app.route("/")
@@ -79,8 +79,8 @@ Respond ONLY in valid JSON like this:
         ]
     }
 
-    # Send request to Gemini
     try:
+        # Call Gemini API
         response = requests.post(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent",
             headers=headers,
@@ -90,13 +90,12 @@ Respond ONLY in valid JSON like this:
         result = response.json()
         print("📄 Gemini raw response:", result)
 
-        # Parse response
-       if "candidates" in result and result["candidates"]:
-    try:
-        gemini_text = result["candidates"][0]["content"]["parts"][0]["text"]
-        print("📦 Gemini raw text before parsing:\n", gemini_text)  # 👈 ADD THIS LINE
-        parsed = json.loads(gemini_text)
-        return jsonify(parsed)
+        if "candidates" in result and result["candidates"]:
+            try:
+                gemini_text = result["candidates"][0]["content"]["parts"][0]["text"]
+                print("🗃 Gemini raw text before parsing:\n", gemini_text)
+                parsed = json.loads(gemini_text)
+                return jsonify(parsed)
             except Exception as e:
                 return jsonify({
                     "error": "Invalid model output — could not parse JSON",
