@@ -82,7 +82,7 @@ Respond ONLY in valid JSON like this:
         result = response.json()
         print("📄 Gemini raw response:", result)
 
-      if "candidates" in result:
+     if "candidates" in result:
     gemini_text = result["candidates"][0]["content"]["parts"][0]["text"]
 
     try:
