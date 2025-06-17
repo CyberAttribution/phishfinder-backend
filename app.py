@@ -39,8 +39,7 @@ def home():
 def check():
     data = request.get_json()
     print("🔥 /check endpoint was hit with:", data)
-
-   if not data or "domain" not in data:
+    if not data or "domain" not in data:
         return jsonify({"error": "Missing 'domain' field in request"}), 400
 
     prompt_text = data["domain"]
