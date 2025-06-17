@@ -51,7 +51,7 @@ def check():
         "x-goog-api-key": GEMINI_API_KEY
     }
 
-   prompt = f"""
+prompt = f"""
 Evaluate whether this domain or email address could be used in a phishing attempt: {prompt_text}
 
 Respond ONLY in valid JSON like this:
