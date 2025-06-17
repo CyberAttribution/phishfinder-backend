@@ -42,16 +42,16 @@ def home():
 
 @app.route("/check", methods=["POST"])
 def check():
-    data = request.get_json()
-    print("🔥 /check endpoint was hit with:", data)
+    try:
+        data = request.get_json()
+        print("🔥 /check endpoint was hit with:", data)
 
-    if not data or "domain" not in data:
-        return jsonify({"error": "Missing 'domain' field in request"}), 400
+        if not data or "domain" not in data:
+            return jsonify({"error": "Missing 'domain' field in request"}), 400
 
-    prompt_text = data["domain"]
+        prompt_text = data["domain"]
 
-    # Construct prompt for Gemini
-    prompt = f"""
+        prompt = f"""
 Evaluate whether this domain or email address could be used in a phishing attempt: {prompt_text}
 
 Respond ONLY in valid JSON like this:
@@ -63,22 +63,19 @@ Respond ONLY in valid JSON like this:
 }}
 """
 
-    headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY
-    }
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY
+        }
 
-    body = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt}
-                ]
-            }
-        ]
-    }
+        body = {
+            "contents": [
+                {
+                    "parts": [{"text": prompt}]
+                }
+            ]
+        }
 
-    try:
         response = requests.post(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent",
             headers=headers,
@@ -89,20 +86,21 @@ Respond ONLY in valid JSON like this:
         print("📄 Gemini raw response:", result)
 
         if "candidates" in result and result["candidates"]:
+            gemini_text = result["candidates"][0]["content"]["parts"][0]["text"]
+            print("🗃 Gemini response text:", gemini_text)
+
             try:
-                gemini_text = result["candidates"][0]["content"]["parts"][0]["text"]
-                print("🗃 Gemini raw text before parsing:\n", gemini_text)
                 parsed = json.loads(gemini_text)
                 return jsonify(parsed)
             except Exception as e:
-                print("❌ JSON parsing failed:", e)
+                print("❌ JSON parse error:", str(e))
                 return jsonify({
-                    "error": "Could not parse Gemini output as JSON",
+                    "error": "Could not parse Gemini output",
                     "raw_output": gemini_text,
                     "exception": str(e)
                 }), 500
         else:
-            return jsonify({"error": "No response candidates from Gemini"}), 400
+            return jsonify({"error": "No valid response from Gemini"}), 500
 
     except Exception as e:
         print("❌ Gemini request failed:", str(e))
@@ -110,6 +108,7 @@ Respond ONLY in valid JSON like this:
             "error": "Request to Gemini API failed",
             "message": str(e)
         }), 500
+
 
 # Start the Flask app
 if __name__ == "__main__":
