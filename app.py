@@ -8,11 +8,7 @@ app = Flask(__name__)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")  # Set this in your .env or Render environment
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 
-        print("📩 Incoming request data:", data)
 
-    if not data or "domain" not in data:
-        return jsonify({"error": "Missing 'domain' in request"}), 400
-        print("📩 Incoming request data:", data)@app.route("/check", methods=["POST"])
 def check():
     try:
         data = request.get_json()
