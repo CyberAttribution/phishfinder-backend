@@ -51,17 +51,16 @@ def check():
         "x-goog-api-key": GEMINI_API_KEY
     }
 
-    prompt = f"""
+   prompt = f"""
 Evaluate whether this domain or email address could be used in a phishing attempt: {prompt_text}
 
-Respond in this format:
-
-- Phishing Risk: [Low / Moderate / High]
-- Summary: A clear 1–3 sentence overview
-- What to Watch For: Bullet points of risk indicators
-- Advice: A single sentence of guidance
-
-Keep it professional and concise, as if for a browser security tool.
+Respond ONLY in valid JSON like this:
+{
+  "risk": "Low",
+  "summary": "Brief one-sentence summary",
+  "watchFor": ["Red flag 1", "Red flag 2"],
+  "advice": "One-sentence user guidance"
+}
 """
 
     body = {
@@ -84,8 +83,17 @@ Keep it professional and concise, as if for a browser security tool.
         print("📄 Gemini raw response:", result)
 
         if "candidates" in result:
-            gemini_response = result["candidates"][0]["content"]["parts"][0]["text"]
-            return jsonify({"response": gemini_response})
+           gemini_text = result["candidates"][0]["content"]["parts"][0]["text"]
+
+try:
+    parsed = json.loads(gemini_text)
+    return jsonify(parsed)
+except Exception as e:
+    return jsonify({
+        "error": "Invalid model output — could not parse JSON",
+        "raw": gemini_text,
+        "message": str(e)
+    }), 500
         else:
             return jsonify({"error": "No response or unclear result."}), 400
 
