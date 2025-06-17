@@ -91,11 +91,12 @@ Respond ONLY in valid JSON like this:
         print("📄 Gemini raw response:", result)
 
         # Parse response
-        if "candidates" in result and result["candidates"]:
-            try:
-                gemini_text = result["candidates"][0]["content"]["parts"][0]["text"]
-                parsed = json.loads(gemini_text)
-                return jsonify(parsed)
+       if "candidates" in result and result["candidates"]:
+    try:
+        gemini_text = result["candidates"][0]["content"]["parts"][0]["text"]
+        print("📦 Gemini raw text before parsing:\n", gemini_text)  # 👈 ADD THIS LINE
+        parsed = json.loads(gemini_text)
+        return jsonify(parsed)
             except Exception as e:
                 return jsonify({
                     "error": "Invalid model output — could not parse JSON",
