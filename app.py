@@ -74,3 +74,6 @@ def check():
     except Exception as e:
         print("🔥 Unexpected server error:", str(e))
         return jsonify({"error": "Internal server error", "exception": str(e)}), 500
+    if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
+
