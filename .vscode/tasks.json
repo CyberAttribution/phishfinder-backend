@@ -1,0 +1,31 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Gemini: Explain Selected Code",
+            "type": "shell",
+            "command": "/bin/bash",
+            "args": [
+                "-l",
+                "-c",
+                "GOOGLE_API_KEY=AIzaSyAaNCGyjQXq3oANlagZNg9VAk_TmsQV1pI ${workspaceFolder}/env/bin/python ${workspaceFolder}/ai_integration/explain_code_gemini.py \"${input:selectedText}\""
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            }
+        }
+    ],
+    "inputs": [ // <--- ADD THIS ENTIRE 'inputs' BLOCK
+        {
+            "id": "selectedText",
+            "type": "selection",
+            "description": "Selected text from the editor"
+        }
+    ]
+}
