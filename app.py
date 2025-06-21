@@ -3,18 +3,16 @@ import requests
 import json
 import os
 import time
+import whois # <--- ADDED: Import the whois library
+from datetime import datetime # <--- ADDED: To help format the date
 
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-# Load API keys from environment variables
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 MAILERLITE_API_KEY = os.environ.get("MAILERLITE_API_KEY")
 MAILERLITE_GROUP_ID = os.environ.get("MAILERLITE_GROUP_ID")
-
-# Define API URLs
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent"
-# Ensure the Group ID is available before constructing the MailerLite URL
 if MAILERLITE_GROUP_ID:
     MAILERLITE_API_URL = f"https://api.mailerlite.com/api/v2/groups/{MAILERLITE_GROUP_ID}/subscribers"
 else:
@@ -34,6 +32,23 @@ def check():
 
         domain = data["domain"]
         input_text = data.get("text", "")
+        
+        # --- ADDED: WHOIS Lookup Logic ---
+        creation_date_str = "Not available"
+        try:
+            domain_info = whois.whois(domain)
+            # whois can return a list or a single datetime object
+            if isinstance(domain_info.creation_date, list):
+                creation_date = domain_info.creation_date[0]
+            else:
+                creation_date = domain_info.creation_date
+            
+            if creation_date:
+                creation_date_str = creation_date.strftime("%Y-%m-%d")
+            print(f"ℹ️ WHOIS Creation Date for {domain}: {creation_date_str}")
+        except Exception as e:
+            print(f"⚠️ WHOIS lookup failed for {domain}: {e}")
+        # --- END of WHOIS Logic ---
 
         prompt = (
             f"As an expert in cybersecurity and threat intelligence, analyze the following domain for potential phishing or malicious intent. Provide a numerical risk score from 1-100 (100 being highest risk). Explain the reasoning behind the score, highlighting specific indicators for a cybersecurity journalist. Focus on elements like domain age, unusual characters, brand impersonation attempts, and typical phishing patterns.\n\n"
@@ -67,12 +82,9 @@ def check():
         
         gemini_call_start_time = time.time()
         print(f"[{gemini_call_start_time:.0f}] 🌐 Sending request to Gemini API...")
-
         response = requests.post(url, headers=headers, json=body)
-
         gemini_call_end_time = time.time()
         duration = gemini_call_end_time - gemini_call_start_time
-        # This is the line that was corrected
         print(f"[{gemini_call_end_time:.0f}] 🧠 Received response from Gemini. The API call took: {duration:.2f} seconds.")
 
         if not response.ok:
@@ -83,9 +95,13 @@ def check():
 
         if "candidates" in result and result["candidates"]:
             gemini_output_json_str = result["candidates"][0]["content"]["parts"][0]["text"]
+            # Combine the Gemini response with our WHOIS data
+            final_response_data = json.loads(gemini_output_json_str)
+            final_response_data['creation_date'] = creation_date_str # Add the creation date here
+            
             total_duration = time.time() - function_start_time
             print(f"[{time.time():.0f}] ✅ Successfully processed request. Total time: {total_duration:.2f} seconds.")
-            return jsonify(json.loads(gemini_output_json_str))
+            return jsonify(final_response_data)
         else:
             print("⚠️ Gemini response had no valid candidates.")
             return jsonify({"error": "No valid response from Gemini"}), 500
@@ -97,6 +113,7 @@ def check():
 # --- SUBSCRIBE ENDPOINT ---
 @app.route("/subscribe", methods=["POST"])
 def subscribe():
+    # ... (This function remains unchanged) ...
     try:
         data = request.get_json()
         email = data.get("email")
@@ -128,6 +145,3 @@ def subscribe():
     except Exception as e:
         print(f"🔥 Unexpected server error in /subscribe: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
-
-# This part is for running the app with Gunicorn, which Render does automatically.
-# The if __name__ == "__main__": block is not needed for Render's default Gunicorn setup.
