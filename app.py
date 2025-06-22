@@ -1,5 +1,6 @@
 # Final version for Alpha Test - June 22
 from flask import Flask, request, jsonify
+from flask_cors import CORS  # <--- ADDED CORS FIX
 import requests
 import json
 import os
@@ -9,6 +10,7 @@ import whois
 from datetime import datetime
 
 app = Flask(__name__)
+CORS(app)  # <--- ADDED CORS FIX
 
 # --- CONFIGURATION ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -156,7 +158,7 @@ def check():
         print(f"🔥 Unexpected server error in /check: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
-# --- SUBSCRIBE ENDPOINT (This is your full, correct code) ---
+# --- SUBSCRIBE ENDPOINT ---
 @app.route("/subscribe", methods=["POST"])
 def subscribe():
     try:
