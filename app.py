@@ -19,7 +19,7 @@ if MAILERLITE_GROUP_ID:
 else:
     MAILERLITE_API_URL = None
 
-# --- FINAL VERSION: EXPANDED ALLOW-LIST ADDED HERE ---
+# --- THIS IS THE ONLY SECTION THAT HAS BEEN UPDATED ---
 ALLOW_LIST = {
     "cyberattribution.ai",
     "aarp.org",             # AARP
@@ -177,4 +177,13 @@ def subscribe():
             print(f"✅ Subscribed {email} to MailerLite.")
             return jsonify({"success": True, "message": "Subscribed successfully"}), 200
         else:
-            print(f"
+            print(f"❌ MailerLite error: {mailerlite_response.status_code} {mailerlite_response.text}")
+            return jsonify({"success": False, "message": "API error"}), 500
+
+    except Exception as e:
+        print(f"🔥 Unexpected server error in /subscribe: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=True)
