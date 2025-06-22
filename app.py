@@ -19,6 +19,20 @@ if MAILERLITE_GROUP_ID:
 else:
     MAILERLITE_API_URL = None
 
+# --- FINAL VERSION: EXPANDED ALLOW-LIST ADDED HERE ---
+ALLOW_LIST = {
+    "cyberattribution.ai",
+    "aarp.org",             # AARP
+    "ncoa.org",             # National Council on Aging
+    "consumerfed.org",      # Consumer Federation of America
+    "cyberseniors.org",     # Cyber-Seniors
+    "pta.org",              # National PTA
+    "consumer.ftc.gov",     # Part of the ecosystem for gov't reporting
+    "bbb.org",              # Better Business Bureau
+    "idtheftcenter.org",    # Identity Theft Resource Center
+    "lifelock.com"          # Gen Digital (LifeLock / Norton)
+}
+
 # --- CHECK ENDPOINT ---
 @app.route("/check", methods=["POST"])
 def check():
@@ -37,13 +51,11 @@ def check():
             print("⚠️ Missing 'domain' or 'email' in request.")
             return jsonify({"error": "Missing input in request"}), 400
 
-        # --- Input Detection Logic ---
+        # Input Detection Logic
         if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
             print(f"✅ Input detected as an EMAIL: {user_input}")
             username, domain_from_email = user_input.split('@', 1)
-            analysis_target = domain_from_email
-            
-            # --- THIS IS THE REFINED PROMPT ---
+            analysis_target = domain_from_email.lower()
             prompt_template = (
                 "As a cybersecurity expert, analyze the EMAIL ADDRESS '{user_input}' for phishing indicators. The username part is '{username}' and the domain is '{analysis_target}'. The domain's creation date is {creation_date_str}. "
                 "When evaluating risk, consider that new businesses and startups legitimately have recently created domains; this is a potential indicator but not definitive proof of maliciousness. "
@@ -52,11 +64,22 @@ def check():
             )
         else:
             print(f"✅ Input detected as a DOMAIN/URL: {user_input}")
-            analysis_target = user_input
+            analysis_target = user_input.lower()
             prompt_template = (
                 "As a cybersecurity expert, analyze the DOMAIN '{analysis_target}' for phishing risk. The domain's creation date is {creation_date_str}. Focus on domain age, brand impersonation, and other standard indicators. Provide a risk score (1-100) and a summary in a JSON object with keys: 'risk_score', 'summary', 'indicators', 'journalist_tips'."
             )
         
+        # Check against the Allow-List
+        if analysis_target in ALLOW_LIST:
+            print(f"✅ Domain '{analysis_target}' found in the Allow-List. Bypassing AI analysis.")
+            return jsonify({
+                "risk_score": 0,
+                "summary": f"The domain '{analysis_target}' is a known, trusted entity.",
+                "indicators": ["This domain is on our internal allow-list."],
+                "journalist_tips": ["No risk detected from this trusted domain."],
+                "creation_date": "N/A"
+            })
+
         creation_date_str = "Not available"
         try:
             domain_info = whois.whois(analysis_target)
@@ -78,7 +101,23 @@ def check():
             return jsonify({"error": "Gemini API key not configured on server"}), 500
 
         headers = {"Content-Type": "application/json"}
-        body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"response_mime_type": "application/json"}}
+        body = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "response_mime_type": "application/json",
+                "response_schema": {
+                    "type": "object",
+                    "properties": {
+                        "risk_score": {"type": "integer"},
+                        "summary": {"type": "string"},
+                        "indicators": {"type": "array", "items": {"type": "string"}},
+                        "journalist_tips": {"type": "array", "items": {"type": "string"}}
+                    },
+                    "required": ["risk_score", "summary", "indicators"]
+                }
+            }
+        }
+
         url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
         
         gemini_call_start_time = time.time()
@@ -138,13 +177,4 @@ def subscribe():
             print(f"✅ Subscribed {email} to MailerLite.")
             return jsonify({"success": True, "message": "Subscribed successfully"}), 200
         else:
-            print(f"❌ MailerLite error: {mailerlite_response.status_code} {mailerlite_response.text}")
-            return jsonify({"success": False, "message": "API error"}), 500
-
-    except Exception as e:
-        print(f"🔥 Unexpected server error in /subscribe: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+            print(f"
