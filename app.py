@@ -3,7 +3,7 @@ import requests
 import json
 import os
 import time
-import re  # For email detection
+import re
 import whois
 from datetime import datetime
 
@@ -31,20 +31,24 @@ def check():
             return jsonify({"error": "Invalid JSON"}), 400
         
         user_input = data.get("domain", "").strip()
-        input_text = data.get("text", "") # Keep the context field
+        input_text = data.get("text", "") 
         
         if not user_input:
             print("⚠️ Missing 'domain' or 'email' in request.")
             return jsonify({"error": "Missing input in request"}), 400
 
-        # --- NEW: Input Detection Logic ---
+        # --- Input Detection Logic ---
         if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
             print(f"✅ Input detected as an EMAIL: {user_input}")
             username, domain_from_email = user_input.split('@', 1)
             analysis_target = domain_from_email
-            # The prompt now includes placeholders for data we will add
+            
+            # --- THIS IS THE REFINED PROMPT ---
             prompt_template = (
-                "As a cybersecurity expert, analyze the EMAIL ADDRESS '{user_input}' for phishing indicators. The username part is '{username}' and the domain is '{analysis_target}'. The domain's creation date is {creation_date_str}. Assess if the username creates false authority (e.g., 'support', 'billing') and if the domain seems suspicious or impersonates a brand. Provide a risk score (1-100) and a summary in a JSON object with keys: 'risk_score', 'summary', 'indicators', 'journalist_tips'."
+                "As a cybersecurity expert, analyze the EMAIL ADDRESS '{user_input}' for phishing indicators. The username part is '{username}' and the domain is '{analysis_target}'. The domain's creation date is {creation_date_str}. "
+                "When evaluating risk, consider that new businesses and startups legitimately have recently created domains; this is a potential indicator but not definitive proof of maliciousness. "
+                "Assess if the username ('{username}') creates false authority (e.g., 'support', 'billing') and if the domain ('{analysis_target}') appears to be impersonating a *different*, well-known brand. "
+                "Provide a risk score (1-100) and a summary in a JSON object with keys: 'risk_score', 'summary', 'indicators', 'journalist_tips'."
             )
         else:
             print(f"✅ Input detected as a DOMAIN/URL: {user_input}")
@@ -67,7 +71,6 @@ def check():
         except Exception as e:
             print(f"⚠️ WHOIS lookup failed for {analysis_target}: {e}")
 
-        # Dynamically build the final prompt
         prompt = prompt_template.format(user_input=user_input, username=locals().get('username', ''), analysis_target=analysis_target, creation_date_str=creation_date_str)
         
         if not GEMINI_API_KEY:
@@ -107,7 +110,7 @@ def check():
         print(f"🔥 Unexpected server error in /check: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
-# --- SUBSCRIBE ENDPOINT (Your full, correct code restored) ---
+# --- SUBSCRIBE ENDPOINT (Unchanged) ---
 @app.route("/subscribe", methods=["POST"])
 def subscribe():
     try:
