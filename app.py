@@ -1,3 +1,4 @@
+# Final version for Alpha Test - June 22
 from flask import Flask, request, jsonify
 import requests
 import json
@@ -52,7 +53,7 @@ def check():
             return jsonify({"error": "Missing input in request"}), 400
 
         analysis_target = ""
-        # --- UPDATED SECTION: PROMPT TEMPLATES ---
+        # Input Detection Logic
         if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
             print(f"✅ Input detected as an EMAIL: {user_input}")
             username, domain_from_email = user_input.split('@', 1)
@@ -105,7 +106,6 @@ def check():
             return jsonify({"error": "Gemini API key not configured on server"}), 500
 
         headers = {"Content-Type": "application/json"}
-        # --- UPDATED SECTION: RESPONSE SCHEMA ---
         body = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
