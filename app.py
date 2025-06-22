@@ -1,7 +1,7 @@
 # Testing after restart.
 # Final version for Alpha Test - June 22
 from flask import Flask, request, jsonify
-from flask_cors import CORS  # <--- ADDED CORS FIX
+from flask_cors import CORS
 import requests
 import json
 import os
@@ -9,9 +9,10 @@ import time
 import re
 import whois
 from datetime import datetime
+from dns import resolver # <--- NEW: Import the dnspython library
 
 app = Flask(__name__)
-CORS(app)  # <--- ADDED CORS FIX
+CORS(app)
 
 # --- CONFIGURATION ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -62,19 +63,21 @@ def check():
             username, domain_from_email = user_input.split('@', 1)
             analysis_target = domain_from_email.lower()
             prompt_template = (
-                "As a cybersecurity expert, analyze the EMAIL ADDRESS '{user_input}' for phishing indicators. The username is '{username}' and the domain is '{analysis_target}'. The domain's creation date is {creation_date_str}. "
-                "When evaluating risk, consider that new businesses and startups legitimately have recently created domains; this is a potential indicator but not definitive proof of maliciousness. "
-                "Assess if the username ('{username}') creates false authority (e.g., 'support', 'billing') and if the domain ('{analysis_target}') appears to be impersonating a *different*, well-known brand. "
-                "Also, based on your analysis, generate two pieces of content: a concise 'security_alert' for an internal IT team, and a brief 'social_post' (max 280 chars) for warning others on social media. "
-                "Provide a risk score (1-100) and a summary in a JSON object with keys: 'risk_score', 'summary', 'indicators', 'journalist_tips', 'security_alert', 'social_post'."
+                "As a cybersecurity expert, analyze the EMAIL ADDRESS '{user_input}'. The domain is '{analysis_target}'. Key evidence: "
+                "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. " # <--- NEW EVIDENCE POINT
+                "Assess risk considering new domains can be legitimate for startups and MX records are a positive sign. Focus on brand impersonation. "
+                "Also, generate a concise 'security_alert' and a 'social_post'. "
+                "Provide a risk score (1-100) and a summary in a JSON object."
             )
         else:
             print(f"✅ Input detected as a DOMAIN/URL: {user_input}")
             analysis_target = user_input.lower()
             prompt_template = (
-                "As a cybersecurity expert, analyze the DOMAIN '{analysis_target}' for phishing risk. The domain's creation date is {creation_date_str}. Focus on domain age, brand impersonation, and other standard indicators. "
-                "Also, based on your analysis, generate two pieces of content: a concise 'security_alert' for an internal IT team, and a brief 'social_post' (max 280 chars) for warning others on social media. "
-                "Provide a risk score (1-100) and a summary in a JSON object with keys: 'risk_score', 'summary', 'indicators', 'journalist_tips', 'security_alert', 'social_post'."
+                "As a cybersecurity expert, analyze the DOMAIN '{analysis_target}'. Key evidence: "
+                "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. " # <--- NEW EVIDENCE POINT
+                "Focus on brand impersonation and other standard indicators. "
+                "Also generate a concise 'security_alert' and a 'social_post'. "
+                "Provide a risk score (1-100) and a summary in a JSON object."
             )
         
         # Check against the Allow-List
@@ -102,7 +105,18 @@ def check():
         except Exception as e:
             print(f"⚠️ WHOIS lookup failed for {analysis_target}: {e}")
 
-        prompt = prompt_template.format(user_input=user_input, username=locals().get('username', ''), analysis_target=analysis_target, creation_date_str=creation_date_str)
+        # --- NEW: DNS MX Record Lookup ---
+        mx_records_found = "No"
+        try:
+            records = resolver.resolve(analysis_target, 'MX')
+            if records:
+                mx_records_found = "Yes"
+            print(f"ℹ️ DNS MX Records Found for {analysis_target}: {mx_records_found}")
+        except Exception as e:
+            print(f"⚠️ DNS MX lookup failed for {analysis_target}: {e}")
+        # --- END of DNS Logic ---
+
+        prompt = prompt_template.format(user_input=user_input, username=locals().get('username', ''), analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
         
         if not GEMINI_API_KEY:
             print("❌ GEMINI_API_KEY is not set.")
@@ -147,6 +161,7 @@ def check():
             gemini_output_json_str = result["candidates"][0]["content"]["parts"][0]["text"]
             final_response_data = json.loads(gemini_output_json_str)
             final_response_data['creation_date'] = creation_date_str
+            final_response_data['mx_records_found'] = mx_records_found # <--- NEW: Add MX data to response
             
             total_duration = time.time() - function_start_time
             print(f"[{time.time():.0f}] ✅ Successfully processed request. Total time: {total_duration:.2f} seconds.")
