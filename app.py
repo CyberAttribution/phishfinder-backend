@@ -3,8 +3,9 @@ import requests
 import json
 import os
 import time
-import whois # <--- ADDED: Import the whois library
-from datetime import datetime # <--- ADDED: To help format the date
+import re  # For email detection
+import whois
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -26,18 +27,35 @@ def check():
 
     try:
         data = request.get_json()
-        if not data or "domain" not in data:
-            print("⚠️ Missing 'domain' in request.")
-            return jsonify({"error": "Missing 'domain' in request"}), 400
-
-        domain = data["domain"]
-        input_text = data.get("text", "")
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
         
-        # --- ADDED: WHOIS Lookup Logic ---
+        user_input = data.get("domain", "").strip()
+        input_text = data.get("text", "") # Keep the context field
+        
+        if not user_input:
+            print("⚠️ Missing 'domain' or 'email' in request.")
+            return jsonify({"error": "Missing input in request"}), 400
+
+        # --- NEW: Input Detection Logic ---
+        if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
+            print(f"✅ Input detected as an EMAIL: {user_input}")
+            username, domain_from_email = user_input.split('@', 1)
+            analysis_target = domain_from_email
+            # The prompt now includes placeholders for data we will add
+            prompt_template = (
+                "As a cybersecurity expert, analyze the EMAIL ADDRESS '{user_input}' for phishing indicators. The username part is '{username}' and the domain is '{analysis_target}'. The domain's creation date is {creation_date_str}. Assess if the username creates false authority (e.g., 'support', 'billing') and if the domain seems suspicious or impersonates a brand. Provide a risk score (1-100) and a summary in a JSON object with keys: 'risk_score', 'summary', 'indicators', 'journalist_tips'."
+            )
+        else:
+            print(f"✅ Input detected as a DOMAIN/URL: {user_input}")
+            analysis_target = user_input
+            prompt_template = (
+                "As a cybersecurity expert, analyze the DOMAIN '{analysis_target}' for phishing risk. The domain's creation date is {creation_date_str}. Focus on domain age, brand impersonation, and other standard indicators. Provide a risk score (1-100) and a summary in a JSON object with keys: 'risk_score', 'summary', 'indicators', 'journalist_tips'."
+            )
+        
         creation_date_str = "Not available"
         try:
-            domain_info = whois.whois(domain)
-            # whois can return a list or a single datetime object
+            domain_info = whois.whois(analysis_target)
             if isinstance(domain_info.creation_date, list):
                 creation_date = domain_info.creation_date[0]
             else:
@@ -45,39 +63,19 @@ def check():
             
             if creation_date:
                 creation_date_str = creation_date.strftime("%Y-%m-%d")
-            print(f"ℹ️ WHOIS Creation Date for {domain}: {creation_date_str}")
+            print(f"ℹ️ WHOIS Creation Date for {analysis_target}: {creation_date_str}")
         except Exception as e:
-            print(f"⚠️ WHOIS lookup failed for {domain}: {e}")
-        # --- END of WHOIS Logic ---
+            print(f"⚠️ WHOIS lookup failed for {analysis_target}: {e}")
 
-        prompt = (
-            f"As an expert in cybersecurity and threat intelligence, analyze the following domain for potential phishing or malicious intent. Provide a numerical risk score from 1-100 (100 being highest risk). Explain the reasoning behind the score, highlighting specific indicators for a cybersecurity journalist. Focus on elements like domain age, unusual characters, brand impersonation attempts, and typical phishing patterns.\n\n"
-            f"Domain: {domain}\n\nContext: {input_text}\n\n"
-            f"Provide your response as a JSON object with the following keys: 'risk_score' (integer 1-100), 'summary' (string), 'indicators' (array of strings), 'journalist_tips' (array of strings)."
-        )
-
+        # Dynamically build the final prompt
+        prompt = prompt_template.format(user_input=user_input, username=locals().get('username', ''), analysis_target=analysis_target, creation_date_str=creation_date_str)
+        
         if not GEMINI_API_KEY:
             print("❌ GEMINI_API_KEY is not set.")
             return jsonify({"error": "Gemini API key not configured on server"}), 500
 
         headers = {"Content-Type": "application/json"}
-        body = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "response_schema": {
-                    "type": "object",
-                    "properties": {
-                        "risk_score": {"type": "integer"},
-                        "summary": {"type": "string"},
-                        "indicators": {"type": "array", "items": {"type": "string"}},
-                        "journalist_tips": {"type": "array", "items": {"type": "string"}}
-                    },
-                    "required": ["risk_score", "summary", "indicators"]
-                }
-            }
-        }
-
+        body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"response_mime_type": "application/json"}}
         url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
         
         gemini_call_start_time = time.time()
@@ -95,9 +93,8 @@ def check():
 
         if "candidates" in result and result["candidates"]:
             gemini_output_json_str = result["candidates"][0]["content"]["parts"][0]["text"]
-            # Combine the Gemini response with our WHOIS data
             final_response_data = json.loads(gemini_output_json_str)
-            final_response_data['creation_date'] = creation_date_str # Add the creation date here
+            final_response_data['creation_date'] = creation_date_str
             
             total_duration = time.time() - function_start_time
             print(f"[{time.time():.0f}] ✅ Successfully processed request. Total time: {total_duration:.2f} seconds.")
@@ -110,10 +107,9 @@ def check():
         print(f"🔥 Unexpected server error in /check: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
-# --- SUBSCRIBE ENDPOINT ---
+# --- SUBSCRIBE ENDPOINT (Your full, correct code restored) ---
 @app.route("/subscribe", methods=["POST"])
 def subscribe():
-    # ... (This function remains unchanged) ...
     try:
         data = request.get_json()
         email = data.get("email")
@@ -145,3 +141,7 @@ def subscribe():
     except Exception as e:
         print(f"🔥 Unexpected server error in /subscribe: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=True)
