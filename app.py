@@ -1,4 +1,4 @@
-# Final version for Alpha Test - June 24 (Updated for Website Integration)
+# Final version for Alpha Test - June 24 (Corrected for All Fields)
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -11,16 +11,8 @@ from datetime import datetime
 from dns import resolver
 
 app = Flask(__name__)
-# --- CONFIGURATION: Allow requests from your website and extension ---
-# You will need to replace <YOUR_EXTENSION_ID> with your actual extension's ID later
-CORS(app, resources={
-    r"/api/*": {
-        "origins": [
-            "https://phishfinderbot.wpenginepowered.com", 
-            "chrome-extension://<YOUR_EXTENSION_ID>"
-        ]
-    }
-})
+# --- CONFIGURATION: Allow requests from your website ---
+CORS(app, resources={r"/api/*": {"origins": "https://phishfinderbot.wpenginepowered.com"}})
 
 # --- CONFIGURATION ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -36,10 +28,12 @@ else:
 ALLOW_LIST = {
     "cyberattribution.ai", "aarp.org", "ncoa.org", "consumerfed.org",
     "cyberseniors.org", "pta.org", "consumer.ftc.gov", "bbb.org",
-    "idtheftcenter.org", "lifelock.com"
+    "idtheftcenter.org", "lifelock.com", "phishfinder.bot", 
+    "attributionengine.bot", "attributionagent.com", "attributionagent.ai", 
+    "deerpfakedefender.ai"
 }
 
-# --- NEW: Helper function to map score to risk level/class ---
+# --- Helper function to map score to risk level/class ---
 def get_risk_details(score):
     if score >= 80:
         return {"level": "High", "class": "high"}
@@ -48,7 +42,7 @@ def get_risk_details(score):
     else:
         return {"level": "Low", "class": "low"}
 
-# --- CHECK ENDPOINT (Renamed to /api/check) ---
+# --- CHECK ENDPOINT ---
 @app.route("/api/check", methods=["POST"])
 def check():
     function_start_time = time.time()
@@ -59,9 +53,7 @@ def check():
         if not data:
             return jsonify({"error": "Invalid JSON"}), 400
         
-        # --- MODIFIED: Accept 'prompt' from the website frontend ---
         user_input = data.get("prompt", "").strip()
-        
         if not user_input:
             print("⚠️ Missing 'prompt' in request.")
             return jsonify({"error": "Missing input in request"}), 400
@@ -72,33 +64,25 @@ def check():
             print(f"✅ Input detected as an EMAIL: {user_input}")
             username, domain_from_email = user_input.split('@', 1)
             analysis_target = domain_from_email.lower()
-            # This is a simplified prompt for the website context
-            prompt_template = (
-                "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
-                "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
-                "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
-                "Provide a risk score (1-100), a concise summary, a list of warning signs ('indicators'), and brief 'advice' for a non-technical user. "
-                "Also generate a 'security_alert' for IT staff and a 'social_post' for public awareness. "
-                "Format the entire response as a single JSON object."
-            )
         else:
             print(f"✅ Input detected as a DOMAIN/URL: {user_input}")
             analysis_target = user_input.lower()
-            prompt_template = (
-                "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
-                "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
-                "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
-                "Provide a risk score (1-100), a concise summary, a list of warning signs ('indicators'), and brief 'advice' for a non-technical user. "
-                "Also generate a 'security_alert' for IT staff and a 'social_post' for public awareness. "
-                "Format the entire response as a single JSON object."
-            )
-        
+
+        prompt_template = (
+            "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
+            "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
+            "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
+            "Provide a risk score (1-100), a concise summary, a list of warning signs ('watchFor'), and brief 'advice' for a non-technical user. "
+            "Also generate a 'security_alert' for IT staff and a 'social_post' for public awareness. "
+            "Format the entire response as a single JSON object."
+        )
+
         if analysis_target in ALLOW_LIST:
             print(f"✅ Domain '{analysis_target}' found in the Allow-List.")
             return jsonify({
-                "risk": {"level": "Low", "class": "low"},
+                "risk": {"level": "Low", "class": "low", "score": 0},
                 "summary": f"The domain '{analysis_target}' is a known, trusted entity.",
-                "indicators": ["This domain is on our internal allow-list of trusted sites."],
+                "watchFor": ["This domain is on our internal allow-list of trusted sites."],
                 "advice": "This site is considered safe.",
                 "domainAge": "N/A",
                 "mxRecords": "N/A",
@@ -141,23 +125,18 @@ def check():
                     "properties": {
                         "risk_score": {"type": "integer"},
                         "summary": {"type": "string"},
-                        "indicators": {"type": "array", "items": {"type": "string"}},
+                        "watchFor": {"type": "array", "items": {"type": "string"}},
                         "advice": {"type": "string"},
                         "security_alert": {"type": "string"},
                         "social_post": {"type": "string"}
                     },
-                    "required": ["risk_score", "summary", "indicators", "advice", "security_alert", "social_post"]
+                    "required": ["risk_score", "summary", "watchFor", "advice", "security_alert", "social_post"]
                 }
             }
         }
         url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
         
-        gemini_call_start_time = time.time()
-        print(f"[{gemini_call_start_time:.0f}] 🌐 Sending request to Gemini API...")
         response = requests.post(url, headers=headers, json=body)
-        gemini_call_end_time = time.time()
-        duration = gemini_call_end_time - gemini_call_start_time
-        print(f"[{gemini_call_end_time:.0f}] 🧠 Received response from Gemini. Call took: {duration:.2f}s.")
 
         if not response.ok:
             print(f"❌ Gemini error: {response.status_code} {response.text}")
@@ -169,13 +148,17 @@ def check():
             gemini_output_json_str = result["candidates"][0]["content"]["parts"][0]["text"]
             gemini_data = json.loads(gemini_output_json_str)
             
-            # --- MODIFIED: Reformat backend response to match frontend expectations ---
-            risk_details = get_risk_details(gemini_data.get("risk_score", 0))
+            risk_score = gemini_data.get("risk_score", 0)
+            risk_details = get_risk_details(risk_score)
             
             final_response_data = {
-                "risk": risk_details,
+                "risk": {
+                    "level": risk_details["level"],
+                    "class": risk_details["class"],
+                    "score": risk_score
+                },
                 "summary": gemini_data.get("summary", "No summary provided."),
-                "watchFor": gemini_data.get("indicators", []),
+                "watchFor": gemini_data.get("watchFor", []),
                 "advice": gemini_data.get("advice", "No advice provided."),
                 "domainAge": creation_date_str,
                 "mxRecords": mx_records_found,
@@ -186,8 +169,6 @@ def check():
                 "rawInput": user_input
             }
             
-            total_duration = time.time() - function_start_time
-            print(f"[{time.time():.0f}] ✅ Successfully processed request. Total time: {total_duration:.2f}s.")
             return jsonify(final_response_data)
         else:
             print("⚠️ Gemini response had no valid candidates.")
@@ -197,7 +178,7 @@ def check():
         print(f"🔥 Unexpected server error in /api/check: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
-# --- SUBSCRIBE ENDPOINT (Renamed to /api/subscribe) ---
+# --- SUBSCRIBE ENDPOINT ---
 @app.route("/api/subscribe", methods=["POST"])
 def subscribe():
     # This endpoint remains largely the same
