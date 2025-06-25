@@ -1,4 +1,4 @@
-# Final version for Alpha Test - June 24 (Corrected for All Fields)
+# Final version for Alpha Test - June 25 (Expanded CORS)
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -11,8 +11,15 @@ from datetime import datetime
 from dns import resolver
 
 app = Flask(__name__)
-# --- CONFIGURATION: More robust CORS for website and local development ---
-CORS(app, resources={r"/api/*": {"origins": ["https://phishfinderbot.wpenginepowered.com", "http://localhost:8000", "null"]}})
+# --- CONFIGURATION: More robust CORS for all subdomains and primary domain ---
+CORS(app, resources={
+    r"/api/*": {
+        "origins": [
+            "https://phishfinder.bot", 
+            "https://phishfinderbot.wpenginepowered.com"
+        ]
+    }
+})
 
 # --- CONFIGURATION ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
