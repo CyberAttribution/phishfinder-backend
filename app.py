@@ -11,8 +11,8 @@ from datetime import datetime
 from dns import resolver
 
 app = Flask(__name__)
-# --- CONFIGURATION: Allow requests from your website ---
-CORS(app, resources={r"/api/*": {"origins": "https://phishfinderbot.wpenginepowered.com"}})
+# --- CONFIGURATION: More robust CORS for website and local development ---
+CORS(app, resources={r"/api/*": {"origins": ["https://phishfinderbot.wpenginepowered.com", "http://localhost:8000", "null"]}})
 
 # --- CONFIGURATION ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -66,7 +66,13 @@ def check():
             analysis_target = domain_from_email.lower()
         else:
             print(f"✅ Input detected as a DOMAIN/URL: {user_input}")
-            analysis_target = user_input.lower()
+            # A simple way to extract domain from a URL
+            match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', user_input)
+            if match:
+                analysis_target = match.group(1).lower()
+            else:
+                analysis_target = user_input.lower()
+
 
         prompt_template = (
             "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
