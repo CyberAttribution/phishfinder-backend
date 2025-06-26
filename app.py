@@ -106,4 +106,11 @@ def check():
             return jsonify({"error": "No valid response from Gemini"}), 500
 
     except Exception as e:
-        print(f"🔥 Unexpected server error in /api
+        print(f"🔥 Unexpected server error in /api/check: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+# --- SUBSCRIBE ENDPOINT (Unchanged) ---
+# ... (Full subscribe logic) ...
+
+if __name__ == "__main__":
+    # ... (Unchanged) ...
