@@ -1,4 +1,5 @@
-# Final version for Alpha Test - June 25 (Expanded CORS)
+# Testing after restart.
+# Final version for Alpha Test - June 22
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -8,18 +9,11 @@ import time
 import re
 import whois
 from datetime import datetime
-from dns import resolver
+# NOTE: The 'dns' import is removed for this test
+# from dns import resolver 
 
 app = Flask(__name__)
-# --- CONFIGURATION: More robust CORS for all subdomains and primary domain ---
-CORS(app, resources={
-    r"/api/*": {
-        "origins": [
-            "https://phishfinder.bot", 
-            "https://phishfinderbot.wpenginepowered.com"
-        ]
-    }
-})
+CORS(app)
 
 # --- CONFIGURATION ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -73,17 +67,17 @@ def check():
             analysis_target = domain_from_email.lower()
         else:
             print(f"✅ Input detected as a DOMAIN/URL: {user_input}")
-            # A simple way to extract domain from a URL
             match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', user_input)
             if match:
                 analysis_target = match.group(1).lower()
             else:
                 analysis_target = user_input.lower()
 
+        # NOTE: The prompt template has been reverted to not include MX record info
         prompt_template = (
             "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
             "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
-            "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
+            "Domain Creation Date: {creation_date_str}. "
             "Provide a risk score (1-100), a concise summary, a list of warning signs ('watchFor'), and brief 'advice' for a non-technical user. "
             "Also generate a 'security_alert' for IT staff and a 'social_post' for public awareness. "
             "Format the entire response as a single JSON object."
@@ -112,16 +106,9 @@ def check():
         except Exception as e:
             print(f"⚠️ WHOIS lookup failed for {analysis_target}: {e}")
 
-        mx_records_found = "No"
-        try:
-            records = resolver.resolve(analysis_target, 'MX')
-            if records:
-                mx_records_found = "Yes"
-            print(f"ℹ️ DNS MX Records Found for {analysis_target}: {mx_records_found}")
-        except Exception as e:
-            print(f"⚠️ DNS MX lookup failed for {analysis_target}: {e}")
+        # NOTE: The DNS MX record lookup block is removed for this test
 
-        prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
+        prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str)
         
         if not GEMINI_API_KEY:
             print("❌ GEMINI_API_KEY is not set.")
@@ -135,11 +122,9 @@ def check():
                 "response_schema": {
                     "type": "object",
                     "properties": {
-                        "risk_score": {"type": "integer"},
-                        "summary": {"type": "string"},
+                        "risk_score": {"type": "integer"}, "summary": {"type": "string"},
                         "watchFor": {"type": "array", "items": {"type": "string"}},
-                        "advice": {"type": "string"},
-                        "security_alert": {"type": "string"},
+                        "advice": {"type": "string"}, "security_alert": {"type": "string"},
                         "social_post": {"type": "string"}
                     },
                     "required": ["risk_score", "summary", "watchFor", "advice", "security_alert", "social_post"]
@@ -165,15 +150,14 @@ def check():
             
             final_response_data = {
                 "risk": {
-                    "level": risk_details["level"],
-                    "class": risk_details["class"],
+                    "level": risk_details["level"], "class": risk_details["class"],
                     "score": risk_score
                 },
                 "summary": gemini_data.get("summary", "No summary provided."),
                 "watchFor": gemini_data.get("watchFor", []),
                 "advice": gemini_data.get("advice", "No advice provided."),
                 "domainAge": creation_date_str,
-                "mxRecords": mx_records_found,
+                "mxRecords": "N/A", # Return a default value for now
                 "generated": {
                     "securityAlert": gemini_data.get("security_alert", ""),
                     "socialPost": gemini_data.get("social_post", "")
@@ -193,7 +177,6 @@ def check():
 # --- SUBSCRIBE ENDPOINT ---
 @app.route("/api/subscribe", methods=["POST"])
 def subscribe():
-    # This endpoint remains largely the same
     try:
         data = request.get_json()
         email = data.get("email")
