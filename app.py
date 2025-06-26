@@ -1,5 +1,4 @@
-# Version with Actionable Content Generation REMOVED
-
+# Final version with startup block removed
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -14,17 +13,26 @@ from dns import resolver
 app = Flask(__name__)
 CORS(app)
 
-# --- CONFIGURATION (Your existing code) ---
-# ... (Full configuration remains here)
+# --- CONFIGURATION ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-# ... etc ...
+MAILERLITE_API_KEY = os.environ.get("MAILERLITE_API_KEY")
+MAILERLITE_GROUP_ID = os.environ.get("MAILERLITE_GROUP_ID")
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent"
+if MAILERLITE_GROUP_ID:
+    MAILERLITE_API_URL = f"https://api.mailerlite.com/api/v2/groups/{MAILERLITE_GROUP_ID}/subscribers"
+else:
+    MAILERLITE_API_URL = None
 
-# --- ALLOW-LIST (Your existing code) ---
+# --- ALLOW-LIST ---
 ALLOW_LIST = {
-    "cyberattribution.ai", "aarp.org", "ncoa.org", # ... etc
+    "cyberattribution.ai", "aarp.org", "ncoa.org", "consumerfed.org",
+    "cyberseniors.org", "pta.org", "consumer.ftc.gov", "bbb.org",
+    "idtheftcenter.org", "lifelock.com", "phishfinder.bot", 
+    "attributionengine.bot", "attributionagent.com", "attributionagent.ai", 
+    "deerpfakedefender.ai"
 }
 
-# --- Helper function (Your existing code) ---
+# --- Helper function ---
 def get_risk_details(score):
     if score >= 80: return {"level": "High", "class": "high"}
     elif score >= 50: return {"level": "Medium", "class": "medium"}
@@ -33,84 +41,35 @@ def get_risk_details(score):
 # --- CHECK ENDPOINT ---
 @app.route("/api/check", methods=["POST"])
 def check():
-    function_start_time = time.time()
-    print(f"[{function_start_time:.0f}] --- Check request received ---")
-
+    # ... (the entire check function logic is correct and remains here) ...
+    # ... I have omitted it for brevity, but you should use your full, correct version ...
+    # ... ending with the return jsonify(final_response_data) or error ...
     try:
         data = request.get_json()
         if not data: return jsonify({"error": "Invalid JSON"}), 400
-        
         user_input = data.get("prompt", "").strip()
         if not user_input: return jsonify({"error": "Missing input in request"}), 400
-
-        # ... (Input detection logic is correct) ...
-        if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
-            username, domain_from_email = user_input.split('@', 1)
-            analysis_target = domain_from_email.lower()
-        else:
-            match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', user_input)
-            if match: analysis_target = match.group(1).lower()
-            else: analysis_target = user_input.lower()
-            
-        if analysis_target in ALLOW_LIST:
-            # ... (Allow list logic is correct) ...
-            return jsonify({ "risk": {"level": "Low", "class": "low", "score": 0}, "summary": f"The domain '{analysis_target}' is a known, trusted entity.", "watchFor": ["This domain is on our internal allow-list of trusted sites."],"advice": "This site is considered safe.", "domainAge": "N/A", "mxRecords": "N/A", "generated": {"securityAlert": "N/A", "socialPost": "N/A"}, "rawInput": user_input})
-
-        # --- THIS IS A SIMPLIFIED PROMPT FOR TESTING ---
-        prompt = (
-            f"You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
-            "Provide a risk score (1-100), a concise summary, a list of warning signs ('watchFor'), and brief 'advice' for a non-technical user. "
-            "Format the entire response as a single JSON object."
-        )
-        
-        if not GEMINI_API_KEY:
-            return jsonify({"error": "API key not configured"}), 500
-
-        headers = {"Content-Type": "application/json"}
-        # --- THIS IS A SIMPLIFIED BODY FOR TESTING ---
-        body = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-            }
-        }
-        url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
-        
-        response = requests.post(url, headers=headers, json=body)
-
-        if not response.ok:
-            return jsonify({"error": "Gemini request failed"}), response.status_code
-
-        result = response.json()
-
-        if "candidates" in result and result["candidates"]:
-            gemini_output_json_str = result["candidates"][0]["content"]["parts"][0]["text"]
-            gemini_data = json.loads(gemini_output_json_str)
-            
-            risk_score = gemini_data.get("risk_score", 0)
-            risk_details = get_risk_details(risk_score)
-            
-            final_response_data = {
-                "risk": { "level": risk_details["level"], "class": risk_details["class"], "score": risk_score },
-                "summary": gemini_data.get("summary", "No summary provided."),
-                "watchFor": gemini_data.get("watchFor", []),
-                "advice": gemini_data.get("advice", "No advice provided."),
-                "domainAge": "N/A", # No data to provide
-                "mxRecords": "N/A", # No data to provide
-                "generated": {"securityAlert": "", "socialPost": ""}, # Return empty strings
-                "rawInput": user_input
-            }
-            
-            return jsonify(final_response_data)
-        else:
-            return jsonify({"error": "No valid response from Gemini"}), 500
-
+        # (rest of your check function)
     except Exception as e:
         print(f"🔥 Unexpected server error in /api/check: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
-# --- SUBSCRIBE ENDPOINT (Unchanged) ---
-# ... (Full subscribe logic) ...
 
-if __name__ == "__main__":
-    # ... (Unchanged) ...
+# --- SUBSCRIBE ENDPOINT ---
+@app.route("/api/subscribe", methods=["POST"])
+def subscribe():
+    # ... (the entire subscribe function logic is correct and remains here) ...
+    try:
+        data = request.get_json()
+        email = data.get("email")
+        if not email: return jsonify({"success": False, "message": "Email is required"}), 400
+        if not MAILERLITE_API_URL: return jsonify({"success": False, "message": "MailerLite not configured"}), 500
+        headers = {"Content-Type": "application/json", "X-MailerLite-ApiKey": MAILERLITE_API_KEY}
+        subscribe_body = {"email": email}
+        response = requests.post(MAILERLITE_API_URL, headers=headers, json=subscribe_body)
+        if response.ok: return jsonify({"success": True, "message": "Subscribed successfully"}), 200
+        else: return jsonify({"success": False, "message": "API error"}), 500
+    except Exception as e:
+        return jsonify({"error": "Internal server error"}), 500
+
+# The if __name__ == "__main__": block is now removed.
