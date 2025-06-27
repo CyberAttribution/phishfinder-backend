@@ -1,4 +1,4 @@
-# Final version for Alpha Test - June 26 (Simplified CORS Fix)
+# Final version for Alpha Test - June 26 (Specific CORS for Extension)
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -11,15 +11,17 @@ from datetime import datetime
 from dns import resolver
 
 app = Flask(__name__)
-# --- CONFIGURATION: More robust CORS for all subdomains and primary domain ---
+# --- THIS IS THE FINAL, CORRECT CORS CONFIGURATION ---
 CORS(app, resources={
     r"/api/*": {
         "origins": [
             "https://phishfinder.bot", 
-            "https://phishfinderbot.wpenginepowered.com"
+            "https://phishfinderbot.wpenginepowered.com",
+            "chrome-extension://jamobibjpfcllagcdmefmnplcmobldbb" # <-- ADDED YOUR EXTENSION ID
         ]
     }
 })
+
 # --- CONFIGURATION ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 MAILERLITE_API_KEY = os.environ.get("MAILERLITE_API_KEY")
