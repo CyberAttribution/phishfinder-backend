@@ -206,4 +206,4 @@ def subscribe():
     except Exception as e:
         return jsonify({"error": "Internal server error"}), 500
 
-# The if __name__ == "__main__": block has been removed to fix the IndentationError.
+# NOTE: The if __name__ == "__main__": block has been removed as it was causing the IndentationError on Render.
