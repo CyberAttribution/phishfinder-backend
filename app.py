@@ -11,9 +11,15 @@ from datetime import datetime
 from dns import resolver
 
 app = Flask(__name__)
-# --- THIS IS THE FIX: A simpler, more open CORS configuration ---
-CORS(app)
-
+# --- CONFIGURATION: More robust CORS for all subdomains and primary domain ---
+CORS(app, resources={
+    r"/api/*": {
+        "origins": [
+            "https://phishfinder.bot", 
+            "https://phishfinderbot.wpenginepowered.com"
+        ]
+    }
+})
 # --- CONFIGURATION ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 MAILERLITE_API_KEY = os.environ.get("MAILERLITE_API_KEY")
