@@ -9,28 +9,61 @@ import re
 import whois
 from datetime import datetime
 from dns import resolver
+import logging # <-- ADDED
+
+# --- START: ROBUST STARTUP LOGGING AND ERROR HANDLING ---
+# Configure logging to output to the console, which will be captured by Render.
+# This is the most important step for debugging silent crashes.
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# --- END: ROBUST STARTUP LOGGING AND ERROR HANDLING ---
 
 app = Flask(__name__)
+logging.info("Flask app object created.")
+
 # --- THIS IS THE FINAL, CORRECT CORS CONFIGURATION ---
 CORS(app, resources={
     r"/api/*": {
         "origins": [
             "https://phishfinder.bot", 
             "https://phishfinderbot.wpenginepowered.com",
-            "chrome-extension://jamobibjpfcllagcdmefmnplcmobldbb" # <-- ADDED YOUR EXTENSION ID
+            "chrome-extension://jamobibjpfcllagcdmefmnplcmobldbb" # <-- YOUR EXTENSION ID
         ]
     }
 })
+logging.info("CORS configured.")
 
 # --- CONFIGURATION ---
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-MAILERLITE_API_KEY = os.environ.get("MAILERLITE_API_KEY")
-MAILERLITE_GROUP_ID = os.environ.get("MAILERLITE_GROUP_ID")
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent"
-if MAILERLITE_GROUP_ID:
-    MAILERLITE_API_URL = f"https://api.mailerlite.com/api/v2/groups/{MAILERLITE_GROUP_ID}/subscribers"
-else:
-    MAILERLITE_API_URL = None
+# We wrap the entire startup configuration in a try...except block.
+# If the app crashes here, the exception will be logged.
+try:
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+    MAILERLITE_API_KEY = os.environ.get("MAILERLITE_API_KEY")
+    MAILERLITE_GROUP_ID = os.environ.get("MAILERLITE_GROUP_ID")
+    logging.info("Attempting to load environment variables.")
+    
+    # Check if keys are loaded and log a warning if they are not
+    if not GEMINI_API_KEY:
+        logging.warning("GEMINI_API_KEY environment variable is NOT SET.")
+    if not MAILERLITE_API_KEY:
+        logging.warning("MAILERLITE_API_KEY environment variable is NOT SET.")
+    if not MAILERLITE_GROUP_ID:
+        logging.warning("MAILERLITE_GROUP_ID environment variable is NOT SET.")
+
+    GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent"
+    
+    if MAILERLITE_GROUP_ID:
+        MAILERLITE_API_URL = f"https://api.mailerlite.com/api/v2/groups/{MAILERLITE_GROUP_ID}/subscribers"
+        logging.info("MailerLite API URL configured successfully.")
+    else:
+        MAILERLITE_API_URL = None
+        logging.warning("MailerLite API URL is not configured because MAILERLITE_GROUP_ID is missing.")
+
+except Exception as e:
+    # This is the crucial part. It will catch any exception during startup.
+    logging.critical(f"FATAL ERROR DURING STARTUP CONFIGURATION: {e}", exc_info=True)
+    # The `exc_info=True` part will print the full error traceback.
+    
+logging.info("Initial configuration block completed.")
 
 # --- ALLOW-LIST ---
 ALLOW_LIST = {
@@ -40,6 +73,7 @@ ALLOW_LIST = {
     "attributionengine.bot", "attributionagent.com", "attributionagent.ai", 
     "deerpfakedefender.ai"
 }
+logging.info("Allow-list loaded.")
 
 # --- Helper function to map score to risk level/class ---
 def get_risk_details(score):
@@ -50,30 +84,33 @@ def get_risk_details(score):
     else:
         return {"level": "Low", "class": "low"}
 
+logging.info("Helper function defined. Registering API routes.")
+
 # --- CHECK ENDPOINT ---
 @app.route("/api/check", methods=["POST"])
 def check():
-    function_start_time = time.time()
-    print(f"[{function_start_time:.0f}] --- Check request received ---")
+    # Using app.logger which is tied to the Flask app instance
+    app.logger.info(f"--- Check request received from {request.remote_addr} ---")
 
     try:
         data = request.get_json()
         if not data:
+            app.logger.warning("Request received with invalid JSON.")
             return jsonify({"error": "Invalid JSON"}), 400
         
         user_input = data.get("prompt", "").strip()
         if not user_input:
-            print("⚠️ Missing 'prompt' in request.")
+            app.logger.warning("⚠️ Missing 'prompt' in request.")
             return jsonify({"error": "Missing input in request"}), 400
 
         analysis_target = ""
         # Input Detection Logic
         if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
-            print(f"✅ Input detected as an EMAIL: {user_input}")
+            app.logger.info(f"✅ Input detected as an EMAIL: {user_input}")
             username, domain_from_email = user_input.split('@', 1)
             analysis_target = domain_from_email.lower()
         else:
-            print(f"✅ Input detected as a DOMAIN/URL: {user_input}")
+            app.logger.info(f"✅ Input detected as a DOMAIN/URL: {user_input}")
             match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', user_input)
             if match:
                 analysis_target = match.group(1).lower()
@@ -90,7 +127,7 @@ def check():
         )
 
         if analysis_target in ALLOW_LIST:
-            print(f"✅ Domain '{analysis_target}' found in the Allow-List.")
+            app.logger.info(f"✅ Domain '{analysis_target}' found in the Allow-List.")
             return jsonify({
                 "risk": {"level": "Low", "class": "low", "score": 0},
                 "summary": f"The domain '{analysis_target}' is a known, trusted entity.",
@@ -108,23 +145,23 @@ def check():
             creation_date = domain_info.creation_date[0] if isinstance(domain_info.creation_date, list) else domain_info.creation_date
             if creation_date:
                 creation_date_str = creation_date.strftime("%Y-%m-%d")
-            print(f"ℹ️ WHOIS Creation Date for {analysis_target}: {creation_date_str}")
+            app.logger.info(f"ℹ️ WHOIS Creation Date for {analysis_target}: {creation_date_str}")
         except Exception as e:
-            print(f"⚠️ WHOIS lookup failed for {analysis_target}: {e}")
+            app.logger.warning(f"⚠️ WHOIS lookup failed for {analysis_target}: {e}")
 
         mx_records_found = "No"
         try:
             records = resolver.resolve(analysis_target, 'MX')
             if records:
                 mx_records_found = "Yes"
-            print(f"ℹ️ DNS MX Records Found for {analysis_target}: {mx_records_found}")
+            app.logger.info(f"ℹ️ DNS MX Records Found for {analysis_target}: {mx_records_found}")
         except Exception as e:
-            print(f"⚠️ DNS MX lookup failed for {analysis_target}: {e}")
+            app.logger.warning(f"⚠️ DNS MX lookup failed for {analysis_target}: {e}")
 
         prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
         
         if not GEMINI_API_KEY:
-            print("❌ GEMINI_API_KEY is not set.")
+            app.logger.error("❌ GEMINI_API_KEY is not set. Cannot proceed with Gemini request.")
             return jsonify({"error": "API key not configured"}), 500
 
         headers = {"Content-Type": "application/json"}
@@ -149,7 +186,7 @@ def check():
         response = requests.post(url, headers=headers, json=body)
 
         if not response.ok:
-            print(f"❌ Gemini error: {response.status_code} {response.text}")
+            app.logger.error(f"❌ Gemini error: {response.status_code} {response.text}")
             return jsonify({"error": "Gemini request failed"}), response.status_code
 
         result = response.json()
@@ -180,22 +217,24 @@ def check():
             
             return jsonify(final_response_data)
         else:
-            print("⚠️ Gemini response had no valid candidates.")
+            app.logger.warning("⚠️ Gemini response had no valid candidates.")
             return jsonify({"error": "No valid response from Gemini"}), 500
 
     except Exception as e:
-        print(f"🔥 Unexpected server error in /api/check: {str(e)}")
+        app.logger.error(f"🔥 Unexpected server error in /api/check: {str(e)}", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
 
 # --- SUBSCRIBE ENDPOINT ---
 @app.route("/api/subscribe", methods=["POST"])
 def subscribe():
+    app.logger.info(f"--- Subscribe request received from {request.remote_addr} ---")
     try:
         data = request.get_json()
         email = data.get("email")
         if not email:
             return jsonify({"success": False, "message": "Email is required"}), 400
         if not MAILERLITE_API_URL:
+            app.logger.error("❌ MailerLite not configured. Cannot subscribe user.")
             return jsonify({"success": False, "message": "MailerLite not configured"}), 500
         headers = {"Content-Type": "application/json", "X-MailerLite-ApiKey": MAILERLITE_API_KEY}
         subscribe_body = {"email": email}
@@ -203,8 +242,13 @@ def subscribe():
         if response.ok:
             return jsonify({"success": True, "message": "Subscribed successfully"}), 200
         else:
+            app.logger.error(f"❌ MailerLite API error: {response.status_code} {response.text}")
             return jsonify({"success": False, "message": "API error"}), 500
     except Exception as e:
+        app.logger.error(f"🔥 Unexpected server error in /api/subscribe: {str(e)}", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
 
-# The if __name__ == "__main__": block has been removed to fix the IndentationError.
+logging.info("Application startup sequence complete. Waiting for requests.")
+
+# Note: The 'if __name__ == "__main__":' block is intentionally omitted
+# because a production WSGI server like Gunicorn is used for deployment.
