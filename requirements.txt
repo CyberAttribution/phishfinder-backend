@@ -1,6 +1,6 @@
 flask
 gunicorn
 requests
-python-whois
+python-whois==0.8
 Flask-Cors
 dnspython
