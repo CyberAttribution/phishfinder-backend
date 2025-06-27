@@ -1,4 +1,4 @@
-# Final version for Alpha Test - June 25 (Expanded CORS)
+# Final version for Alpha Test - June 26 (Simplified CORS Fix)
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -11,15 +11,8 @@ from datetime import datetime
 from dns import resolver
 
 app = Flask(__name__)
-# --- CONFIGURATION: More robust CORS for all subdomains and primary domain ---
-CORS(app, resources={
-    r"/api/*": {
-        "origins": [
-            "https://phishfinder.bot", 
-            "https://phishfinderbot.wpenginepowered.com"
-        ]
-    }
-})
+# --- THIS IS THE FIX: A simpler, more open CORS configuration ---
+CORS(app)
 
 # --- CONFIGURATION ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -206,4 +199,4 @@ def subscribe():
     except Exception as e:
         return jsonify({"error": "Internal server error"}), 500
 
-# NOTE: The if __name__ == "__main__": block has been removed as it was causing the IndentationError on Render.
+# The if __name__ == "__main__": block has been removed to fix the IndentationError.
