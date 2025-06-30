@@ -90,7 +90,7 @@ def long_running_analysis_task(user_input):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GEMINI_API_KEY}"
         
         print("WORKER: Calling Gemini API...")
-        response = requests.post(url, headers=headers, json=body, timeout=25)
+        response = requests.post(url, headers=headers, json=body, timeout=40)
 
         if not response.ok:
             return {"status": "Error", "result": f"Gemini API returned status {response.status_code}"}
