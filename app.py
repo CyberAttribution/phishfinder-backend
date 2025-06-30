@@ -132,6 +132,13 @@ def long_running_analysis_task(user_input):
 def home():
     return "PhishFinder Python Backend is running!"
 
+@app.route('/health')
+def health_check():
+    """
+    A simple health check endpoint that platforms like Render can use.
+    """
+    return "OK", 200
+
 @app.route("/api/check", methods=["POST"])
 def check_start():
     data = request.get_json()
