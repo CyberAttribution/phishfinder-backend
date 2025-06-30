@@ -17,9 +17,13 @@ from celery import Celery
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# --- CELERY CONFIGURATION ---
-app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
-app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
+# --- CELERY CONFIGURATION (CORRECTED FOR PRODUCTION) ---
+# This now correctly reads the Redis URL from the environment variables you set in Render.
+redis_url = os.environ.get('CELERY_BROKER_URL')
+app.config.update(
+    CELERY_BROKER_URL=redis_url,
+    CELERY_RESULT_BACKEND=redis_url
+)
 celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
 celery.conf.update(app.config)
 
