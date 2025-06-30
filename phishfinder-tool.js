@@ -1,75 +1,74 @@
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-// This wrapper ensures our code doesn't run until the page is ready
+// This wrapper ensures all our code is contained and runs after the page is ready.
 document.addEventListener('DOMContentLoaded', function() {
-    // --- CONFIGURATION ---
-    const API_BASE_URL = 'https://phishfinder-backend.onrender.com'; // Production URL
-
-    // --- Element References ---
-    const toolContainer = document.querySelector('.phishfinder-tool');
-    if (!toolContainer) {
-        console.log('PhishFinder tool container not found on this page.');
-        return; 
-    }
-    const checkButton = toolContainer.querySelector('#checkButton');
-    const phishInput = toolContainer.querySelector('#phishInput');
-    const resultContainer = toolContainer.querySelector('#result');
-    const resultTemplate = toolContainer.querySelector('#result-template');
-=======
-=======
->>>>>>> Stashed changes
-// This function will contain all our logic.
-function phishFinderTool() {
     // --- CONFIGURATION ---
     const API_BASE_URL = 'https://phishfinder-backend.onrender.com';
 
-    // --- Element References ---
+    // --- ELEMENT REFERENCES ---
+    const toolContainer = document.querySelector('.phishfinder-tool');
+    if (!toolContainer) {
+        console.error('PhishFinder tool container not found. Script will not run.');
+        return;
+    }
     const checkButton = document.getElementById('checkButton');
     const phishInput = document.getElementById('phishInput');
     const resultContainer = document.getElementById('result');
     const resultTemplate = document.getElementById('result-template');
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
+    const actionableContent = toolContainer.querySelector('#actionable-content');
+    const securityAlertEl = toolContainer.querySelector('#securityAlert');
+    const socialPostEl = toolContainer.querySelector('#socialPost');
+    const resultActions = toolContainer.querySelector('#result-actions');
+    const copyResultsButton = toolContainer.querySelector('#copyResultsButton');
+    const virusTotalLink = toolContainer.querySelector('#virusTotalLink');
+    const copyButtons = toolContainer.querySelectorAll('.copy-btn');
+    const emailInput = document.getElementById('emailInput');
+    const subscribeButton = document.getElementById('subscribeButton');
 
-    // --- State Variable ---
-    let pollingIntervalId = null;
+    // --- STATE VARIABLE ---
+    let pollingIntervalId = null; 
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-    // --- Event Listeners ---
-    if(checkButton) {
-        checkButton.addEventListener('click', startAnalysis);
-    }
+    // --- EVENT LISTENERS ---
+    checkButton.addEventListener('click', startAnalysis);
+
+    copyButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            const targetId = e.currentTarget.dataset.copyTarget;
+            const targetElement = toolContainer.querySelector(`#${targetId}`);
+            if (targetElement) { copyToClipboard(targetElement.value, e.currentTarget); }
+        });
+    });
+
+    copyResultsButton.addEventListener('click', (e) => {
+        const riskEl = resultContainer.querySelector('#risk');
+        const summaryEl = resultContainer.querySelector('#summary');
+        const domainAgeEl = resultContainer.querySelector('#domainAge');
+        const mxRecordsEl = resultContainer.querySelector('#mxRecords');
+        const watchForEl = resultContainer.querySelector('#watchFor');
+        const adviceEl = resultContainer.querySelector('#advice');
+
+        const fullReport = `
+Phishing Risk: ${riskEl ? riskEl.textContent : 'N/A'}
+Summary: ${summaryEl ? summaryEl.textContent : 'N/A'}
+Domain Created: ${domainAgeEl ? domainAgeEl.textContent : 'N/A'}
+MX Records Found: ${mxRecordsEl ? mxRecordsEl.textContent : 'N/A'}
+What to Watch For:
+${watchForEl ? Array.from(watchForEl.querySelectorAll('li')).map(li => `- ${li.textContent}`).join('\n') : 'N/A'}
+Advice: ${adviceEl ? adviceEl.textContent : 'N/A'}`.trim();
+        copyToClipboard(fullReport, e.currentTarget);
+    });
+    
+    // You can add your subscribe button logic here if it's not handled elsewhere
+    // subscribeButton.addEventListener('click', () => { ... });
+
 
     // --- ASYNC WORKFLOW ---
     function startAnalysis() {
-=======
-=======
->>>>>>> Stashed changes
-    // --- Main Click Handler using Event Delegation ---
-    // This is the more robust method that avoids theme conflicts.
-    document.body.addEventListener('click', function(event) {
-        if (event.target && event.target.id === 'checkButton') {
-            startAnalysis();
-        }
-    });
-
-    function startAnalysis() {
-        if (checkButton.disabled) return; // Prevent multiple clicks while processing
-
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
         const inputValue = phishInput.value.trim();
         if (!inputValue) {
             alert('Please paste a link or email content first.');
             return;
         }
         
-        setLoadingState();
+        setLoadingState(inputValue);
         
         const apiUrl = `${API_BASE_URL}/api/check`;
 
@@ -78,23 +77,10 @@ function phishFinderTool() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt: inputValue })
         })
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        .then(response => {
-            if (!response.ok) { 
-                throw new Error(`Server responded with status: ${response.status}`);
-            }
-            return response.json();
-        })
-=======
         .then(response => response.json())
->>>>>>> Stashed changes
-=======
-        .then(response => response.json())
->>>>>>> Stashed changes
         .then(data => {
             if (data.status === 'pending' && data.task_id) {
-                pollForResult(data.task_id);
+                pollForResult(data.task_id, inputValue);
             } else {
                 throw new Error(data.error || 'Failed to start analysis task.');
             }
@@ -105,22 +91,12 @@ function phishFinderTool() {
         });
     }
 
-    function pollForResult(taskId) {
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        if (pollingIntervalId) {
-            clearInterval(pollingIntervalId);
-        }
-=======
+    function pollForResult(taskId, rawInput) {
         if (pollingIntervalId) clearInterval(pollingIntervalId);
->>>>>>> Stashed changes
-=======
-        if (pollingIntervalId) clearInterval(pollingIntervalId);
->>>>>>> Stashed changes
 
         const resultUrl = `${API_BASE_URL}/api/result/${taskId}`;
         let attempts = 0;
-        const maxAttempts = 20; // Poll for a maximum of 60 seconds
+        const maxAttempts = 20;
 
         pollingIntervalId = setInterval(() => {
             if (attempts >= maxAttempts) {
@@ -134,7 +110,8 @@ function phishFinderTool() {
             .then(data => {
                 if (data.state === 'SUCCESS') {
                     clearInterval(pollingIntervalId);
-                    populateResults(data.data.result);
+                    // Pass rawInput along to the final results display
+                    populateResults(data.data.result, rawInput);
                 } else if (data.state === 'FAILURE') {
                     clearInterval(pollingIntervalId);
                     showErrorState('The analysis failed in the background.');
@@ -150,39 +127,22 @@ function phishFinderTool() {
         }, 3000); 
     }
 
-    // --- UI Update Functions ---
+    // --- UI UPDATE FUNCTIONS ---
     function setLoadingState() {
         checkButton.disabled = true;
         checkButton.textContent = 'Analyzing...';
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        resultContainer.innerHTML = `<div class="text-center p-8">
-            <p class="pulsing font-semibold text-lg">Analyzing... this may take up to 20 seconds.</p>
-            <p class="text-gray-600 mt-2">Your request has been submitted to our analysis engine.</p>
-        </div>`;
-=======
         resultContainer.innerHTML = `<div class="text-center p-8"><p class="pulsing font-semibold text-lg">Analyzing... this may take up to 20 seconds.</p><p class="text-gray-600 mt-2">Your request has been submitted to our analysis engine.</p></div>`;
->>>>>>> Stashed changes
-=======
-        resultContainer.innerHTML = `<div class="text-center p-8"><p class="pulsing font-semibold text-lg">Analyzing... this may take up to 20 seconds.</p><p class="text-gray-600 mt-2">Your request has been submitted to our analysis engine.</p></div>`;
->>>>>>> Stashed changes
+        actionableContent.classList.add('hidden');
+        resultActions.classList.add('hidden');
     }
 
-    function populateResults(data) {
+    function populateResults(data, rawInput) {
         checkButton.disabled = false;
         checkButton.textContent = 'Check Risk';
         resultContainer.innerHTML = ''; 
 
         if (!data || !data.risk) {
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-            showErrorState("Received an incomplete or empty result from the server.");
-=======
             showErrorState("Received an incomplete result from the server.");
->>>>>>> Stashed changes
-=======
-            showErrorState("Received an incomplete result from the server.");
->>>>>>> Stashed changes
             return;
         }
 
@@ -193,13 +153,14 @@ function phishFinderTool() {
         const mxRecordsEl = newResult.querySelector('#mxRecords');
         const watchForEl = newResult.querySelector('#watchFor');
         const adviceEl = newResult.querySelector('#advice');
-
+        
+        // Populate main results
         riskEl.textContent = `${data.risk.level} (${data.risk.score}/100)`;
         riskEl.className = `${data.risk.class} font-semibold`;
-        summaryEl.textContent = data.summary || 'No summary available.';
+        summaryEl.textContent = data.summary || 'N/A';
         domainAgeEl.textContent = data.domainAge || 'N/A';
         mxRecordsEl.textContent = data.mxRecords || 'N/A';
-        adviceEl.textContent = data.advice || 'No advice available.';
+        adviceEl.textContent = data.advice || 'N/A';
         
         if (data.watchFor && data.watchFor.length > 0) {
             watchForEl.innerHTML = data.watchFor.map(item => `<li>${item}</li>`).join('');
@@ -208,32 +169,53 @@ function phishFinderTool() {
         }
 
         resultContainer.appendChild(newResult);
+
+        // Show actionable content if it exists in the response
+        if (data.generated && data.generated.securityAlert) {
+            securityAlertEl.value = data.generated.securityAlert;
+            socialPostEl.value = data.generated.socialPost;
+            actionableContent.classList.remove('hidden');
+        }
+
+        // Always show the result actions block after a successful analysis
+        resultActions.classList.remove('hidden');
+        virusTotalLink.href = `https://www.virustotal.com/gui/search/${encodeURIComponent(rawInput)}`;
     }
     
     function showErrorState(message) {
         checkButton.disabled = false;
         checkButton.textContent = 'Check Risk';
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        resultContainer.innerHTML = `<div class="text-center p-8 border-2 border-red-300 bg-red-50 rounded-lg">
-            <p class="font-bold text-red-700">Error</p>
-            <p class="text-red-600 mt-2">${message}</p>
-        </div>`;
-    }
-});
-=======
-=======
->>>>>>> Stashed changes
         resultContainer.innerHTML = `<div class="text-center p-8 border-2 border-red-300 bg-red-50 rounded-lg"><p class="font-bold text-red-700">Error</p><p class="text-red-600 mt-2">${message}</p></div>`;
     }
-}
 
-// This check ensures our script only runs if the tool is actually on the page.
-if (document.querySelector('.phishfinder-tool')) {
-    phishFinderTool();
-<<<<<<< Updated upstream
-}
->>>>>>> Stashed changes
-=======
-}
->>>>>>> Stashed changes
+    // --- ORIGINAL HELPER FUNCTIONS ---
+    function copyToClipboard(text, button) {
+        if (!navigator.clipboard) {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showCopiedMessage(button);
+            } catch (err) {
+                console.error('Fallback copy failed', err);
+            }
+            document.body.removeChild(textArea);
+            return;
+        }
+        navigator.clipboard.writeText(text).then(() => {
+            showCopiedMessage(button);
+        });
+    }
+
+    function showCopiedMessage(button) {
+        const originalText = button.textContent;
+        button.textContent = 'Copied!';
+        setTimeout(() => { button.textContent = originalText; }, 2000);
+    }
+});
