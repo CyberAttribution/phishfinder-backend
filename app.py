@@ -1,14 +1,23 @@
+<<<<<<< Updated upstream
 # Final version for Alpha Test - June 26 (Specific CORS for Extension)
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import json
+=======
+# --- Imports ---
+from dotenv import load_dotenv
+load_dotenv() # Load environment variables first
+
+>>>>>>> Stashed changes
 import os
 import time
 import re
+import json
 import whois
 from datetime import datetime
 from dns import resolver
+<<<<<<< Updated upstream
 import logging # <-- ADDED
 
 # --- START: ROBUST STARTUP LOGGING AND ERROR HANDLING ---
@@ -16,8 +25,18 @@ import logging # <-- ADDED
 # This is the most important step for debugging silent crashes.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 # --- END: ROBUST STARTUP LOGGING AND ERROR HANDLING ---
+=======
+import requests
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from celery import Celery
+# Note: Playwright and asyncio are only used by the worker, but we keep imports here for clarity
+# In a larger project, tasks would be in their own file.
+>>>>>>> Stashed changes
 
+# --- Flask & Celery Initialization ---
 app = Flask(__name__)
+<<<<<<< Updated upstream
 logging.info("Flask app object created.")
 
 # --- THIS IS THE FINAL, CORRECT CORS CONFIGURATION ---
@@ -66,16 +85,31 @@ except Exception as e:
 logging.info("Initial configuration block completed.")
 
 # --- ALLOW-LIST ---
+=======
+CORS(app, resources={r"/api/*": {"origins": "*"}}) # Using a wildcard for local testing is fine
+
+app.config['CELERY_BROKER_URL'] = 'redis://localhost:6379/0'
+app.config['CELERY_RESULT_BACKEND'] = 'redis://localhost:6379/0'
+celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
+celery.conf.update(app.config)
+
+# --- App Configuration & Helpers ---
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# (Your other configuration and allow-list can be placed here)
+>>>>>>> Stashed changes
 ALLOW_LIST = {
     "cyberattribution.ai", "aarp.org", "ncoa.org", "consumerfed.org",
     "cyberseniors.org", "pta.org", "consumer.ftc.gov", "bbb.org",
-    "idtheftcenter.org", "lifelock.com", "phishfinder.bot", 
-    "attributionengine.bot", "attributionagent.com", "attributionagent.ai", 
+    "idtheftcenter.org", "lifelock.com", "phishfinder.bot",
+    "attributionengine.bot", "attributionagent.com", "attributionagent.ai",
     "deerpfakedefender.ai"
 }
+<<<<<<< Updated upstream
 logging.info("Allow-list loaded.")
 
 # --- Helper function to map score to risk level/class ---
+=======
+>>>>>>> Stashed changes
 def get_risk_details(score):
     if score >= 80:
         return {"level": "High", "class": "high"}
@@ -84,6 +118,7 @@ def get_risk_details(score):
     else:
         return {"level": "Low", "class": "low"}
 
+<<<<<<< Updated upstream
 logging.info("Helper function defined. Registering API routes.")
 
 # --- CHECK ENDPOINT ---
@@ -252,3 +287,115 @@ logging.info("Application startup sequence complete. Waiting for requests.")
 
 # Note: The 'if __name__ == "__main__":' block is intentionally omitted
 # because a production WSGI server like Gunicorn is used for deployment.
+=======
+
+# --- Celery Background Task ---
+@celery.task
+def long_running_analysis_task(user_input):
+    """
+    This background task contains all the original logic from your /api/check endpoint.
+    """
+    print(f"WORKER: Starting full analysis for '{user_input}'...")
+    # --- Start of analysis logic ---
+    analysis_target = ""
+    if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
+        _, domain_from_email = user_input.split('@', 1)
+        analysis_target = domain_from_email.lower()
+    else:
+        match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', user_input)
+        analysis_target = match.group(1).lower() if match else user_input.lower()
+
+    if analysis_target in ALLOW_LIST:
+        return {"status": "Complete", "result": {"risk": {"level": "Low", "score": 0}, "summary": "Domain is on allow-list."}}
+
+    creation_date_str = "Not available"
+    try:
+        domain_info = whois.whois(analysis_target)
+        creation_date = domain_info.creation_date[0] if isinstance(domain_info.creation_date, list) else domain_info.creation_date
+        if creation_date:
+            creation_date_str = creation_date.strftime("%Y-%m-%d")
+    except Exception as e:
+        print(f"WORKER: WHOIS failed: {e}")
+
+    mx_records_found = "No"
+    try:
+        if resolver.resolve(analysis_target, 'MX'):
+            mx_records_found = "Yes"
+    except Exception as e:
+        print(f"WORKER: MX lookup failed: {e}")
+
+    prompt_template = (
+        "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
+        "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
+        "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
+        "Provide a risk score (1-100), a concise summary, a list of warning signs ('watchFor'), and brief 'advice' for a non-technical user. "
+        "Format the entire response as a single JSON object with keys: risk_score, summary, watchFor, advice."
+    )
+    prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
+    
+    headers = {"Content-Type": "application/json"}
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"response_mime_type": "application/json", "response_schema": { "type": "object", "properties": { "risk_score": {"type": "integer"}, "summary": {"type": "string"}, "watchFor": {"type": "array", "items": {"type": "string"}}, "advice": {"type": "string"} } } }
+    }
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GEMINI_API_KEY}"
+    
+    print("WORKER: Calling Gemini API...")
+    response = requests.post(url, headers=headers, json=body)
+
+    if not response.ok:
+        return {"status": "Error", "result": f"Gemini API Error: {response.status_code}"}
+
+    gemini_data = json.loads(response.json()["candidates"][0]["content"]["parts"][0]["text"])
+    risk_score = gemini_data.get("risk_score", 0)
+    risk_details = get_risk_details(risk_score)
+    
+    final_response_data = {
+        "risk": {"level": risk_details["level"], "class": risk_details["class"], "score": risk_score},
+        "summary": gemini_data.get("summary"),
+        "watchFor": gemini_data.get("watchFor"),
+        "advice": gemini_data.get("advice"),
+        "domainAge": creation_date_str,
+        "mxRecords": mx_records_found
+    }
+    print("WORKER: Analysis complete.")
+    return {"status": "Complete", "result": final_response_data}
+
+
+# --- API Endpoints ---
+@app.route('/')
+def home():
+    return "PhishFinder Python Backend is running!"
+
+@app.route("/api/check", methods=["POST"])
+def check_start():
+    data = request.get_json()
+    user_input = data.get("prompt")
+    if not user_input:
+        return jsonify({"error": "Missing input"}), 400
+    
+    print(f"MANAGER: Received request for '{user_input}'. Sending to worker.")
+    task = long_running_analysis_task.delay(user_input)
+    
+    return jsonify({"status": "pending", "task_id": task.id}), 202
+
+@app.route("/api/result/<task_id>", methods=["GET"])
+def get_result(task_id):
+    task = celery.AsyncResult(task_id)
+    if task.state == 'PENDING':
+        response = {'state': task.state, 'status': 'Pending...'}
+    elif task.state != 'FAILURE':
+        response = {'state': task.state, 'data': task.info}
+    else: # Task failed
+        response = {'state': task.state, 'status': str(task.info)}
+    return jsonify(response)
+
+
+# (Your /api/subscribe endpoint would go here if needed)
+
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 10000))
+    # Note: debug=False is better for production/staging environments
+    app.run(host="0.0.0.0", port=port, debug=False)
+>>>>>>> Stashed changes
