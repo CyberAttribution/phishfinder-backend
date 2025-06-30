@@ -41,7 +41,7 @@ def get_risk_details(score):
         return {"level": "Low", "class": "low"}
 
 
-# --- CELERY BACKGROUND TASK ---
+# --- CELERY BACKGROUND TASK (FINAL ROBUST VERSION) ---
 @celery.task
 def long_running_analysis_task(user_input):
     print(f"WORKER: Starting full analysis for '{user_input}'...")
@@ -81,20 +81,37 @@ def long_running_analysis_task(user_input):
     )
     prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
     
-    headers = {"Content-Type": "application/json"}
-    body = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"response_mime_type": "application/json", "response_schema": { "type": "object", "properties": { "risk_score": {"type": "integer"}, "summary": {"type": "string"}, "watchFor": {"type": "array", "items": {"type": "string"}}, "advice": {"type": "string"} } } }
-    }
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GEMINI_API_KEY}"
-    
-    print("WORKER: Calling Gemini API...")
-    response = requests.post(url, headers=headers, json=body)
+    try:
+        headers = {"Content-Type": "application/json"}
+        body = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"response_mime_type": "application/json", "response_schema": { "type": "object", "properties": { "risk_score": {"type": "integer"}, "summary": {"type": "string"}, "watchFor": {"type": "array", "items": {"type": "string"}}, "advice": {"type": "string"} } } }
+        }
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GEMINI_API_KEY}"
+        
+        print("WORKER: Calling Gemini API...")
+        response = requests.post(url, headers=headers, json=body, timeout=25)
 
-    if not response.ok:
-        return {"status": "Error", "result": f"Gemini API Error: {response.status_code}"}
+        if not response.ok:
+            return {"status": "Error", "result": f"Gemini API returned status {response.status_code}"}
 
-    gemini_data = json.loads(response.json()["candidates"][0]["content"]["parts"][0]["text"])
+        result = response.json()
+        
+        if "candidates" not in result or not result["candidates"]:
+            return {"status": "Error", "result": "Gemini returned no valid candidates"}
+        
+        # This is the line that could fail
+        gemini_output_json_str = result["candidates"][0]["content"]["parts"][0]["text"]
+        gemini_data = json.loads(gemini_output_json_str)
+
+    except requests.exceptions.Timeout:
+        return {"status": "Error", "result": "Gemini API call timed out."}
+    except json.JSONDecodeError:
+        return {"status": "Error", "result": "Failed to decode a malformed JSON response from Gemini."}
+    except Exception as e:
+        print(f"WORKER: An unexpected error occurred during API call: {e}")
+        return {"status": "Error", "result": "An unexpected error occurred during analysis."}
+
     risk_score = gemini_data.get("risk_score", 0)
     risk_details = get_risk_details(risk_score)
     
@@ -133,8 +150,10 @@ def get_result(task_id):
     if task.state == 'PENDING':
         response = {'state': task.state, 'status': 'Pending...'}
     elif task.state != 'FAILURE':
-        response = {'state': task.state, 'data': task.info}
-    else: # Task failed
+        # This now correctly handles our custom result format
+        task_info = task.info if isinstance(task.info, dict) else {}
+        response = {'state': task.state, 'data': task_info}
+    else: 
         response = {'state': task.state, 'status': str(task.info)}
     return jsonify(response)
 
