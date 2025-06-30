@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 // This wrapper ensures our code doesn't run until the page is ready
 document.addEventListener('DOMContentLoaded', function() {
     // --- CONFIGURATION ---
@@ -13,10 +14,23 @@ document.addEventListener('DOMContentLoaded', function() {
     const phishInput = toolContainer.querySelector('#phishInput');
     const resultContainer = toolContainer.querySelector('#result');
     const resultTemplate = toolContainer.querySelector('#result-template');
+=======
+// This function will contain all our logic.
+function phishFinderTool() {
+    // --- CONFIGURATION ---
+    const API_BASE_URL = 'https://phishfinder-backend.onrender.com';
+
+    // --- Element References ---
+    const checkButton = document.getElementById('checkButton');
+    const phishInput = document.getElementById('phishInput');
+    const resultContainer = document.getElementById('result');
+    const resultTemplate = document.getElementById('result-template');
+>>>>>>> Stashed changes
 
     // --- State Variable ---
     let pollingIntervalId = null;
 
+<<<<<<< Updated upstream
     // --- Event Listeners ---
     if(checkButton) {
         checkButton.addEventListener('click', startAnalysis);
@@ -24,6 +38,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- ASYNC WORKFLOW ---
     function startAnalysis() {
+=======
+    // --- Main Click Handler using Event Delegation ---
+    // This is the more robust method that avoids theme conflicts.
+    document.body.addEventListener('click', function(event) {
+        if (event.target && event.target.id === 'checkButton') {
+            startAnalysis();
+        }
+    });
+
+    function startAnalysis() {
+        if (checkButton.disabled) return; // Prevent multiple clicks while processing
+
+>>>>>>> Stashed changes
         const inputValue = phishInput.value.trim();
         if (!inputValue) {
             alert('Please paste a link or email content first.');
@@ -39,12 +66,16 @@ document.addEventListener('DOMContentLoaded', function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt: inputValue })
         })
+<<<<<<< Updated upstream
         .then(response => {
             if (!response.ok) { 
                 throw new Error(`Server responded with status: ${response.status}`);
             }
             return response.json();
         })
+=======
+        .then(response => response.json())
+>>>>>>> Stashed changes
         .then(data => {
             if (data.status === 'pending' && data.task_id) {
                 pollForResult(data.task_id);
@@ -59,9 +90,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function pollForResult(taskId) {
+<<<<<<< Updated upstream
         if (pollingIntervalId) {
             clearInterval(pollingIntervalId);
         }
+=======
+        if (pollingIntervalId) clearInterval(pollingIntervalId);
+>>>>>>> Stashed changes
 
         const resultUrl = `${API_BASE_URL}/api/result/${taskId}`;
         let attempts = 0;
@@ -99,10 +134,14 @@ document.addEventListener('DOMContentLoaded', function() {
     function setLoadingState() {
         checkButton.disabled = true;
         checkButton.textContent = 'Analyzing...';
+<<<<<<< Updated upstream
         resultContainer.innerHTML = `<div class="text-center p-8">
             <p class="pulsing font-semibold text-lg">Analyzing... this may take up to 20 seconds.</p>
             <p class="text-gray-600 mt-2">Your request has been submitted to our analysis engine.</p>
         </div>`;
+=======
+        resultContainer.innerHTML = `<div class="text-center p-8"><p class="pulsing font-semibold text-lg">Analyzing... this may take up to 20 seconds.</p><p class="text-gray-600 mt-2">Your request has been submitted to our analysis engine.</p></div>`;
+>>>>>>> Stashed changes
     }
 
     function populateResults(data) {
@@ -111,7 +150,11 @@ document.addEventListener('DOMContentLoaded', function() {
         resultContainer.innerHTML = ''; 
 
         if (!data || !data.risk) {
+<<<<<<< Updated upstream
             showErrorState("Received an incomplete or empty result from the server.");
+=======
+            showErrorState("Received an incomplete result from the server.");
+>>>>>>> Stashed changes
             return;
         }
 
@@ -142,9 +185,20 @@ document.addEventListener('DOMContentLoaded', function() {
     function showErrorState(message) {
         checkButton.disabled = false;
         checkButton.textContent = 'Check Risk';
+<<<<<<< Updated upstream
         resultContainer.innerHTML = `<div class="text-center p-8 border-2 border-red-300 bg-red-50 rounded-lg">
             <p class="font-bold text-red-700">Error</p>
             <p class="text-red-600 mt-2">${message}</p>
         </div>`;
     }
 });
+=======
+        resultContainer.innerHTML = `<div class="text-center p-8 border-2 border-red-300 bg-red-50 rounded-lg"><p class="font-bold text-red-700">Error</p><p class="text-red-600 mt-2">${message}</p></div>`;
+    }
+}
+
+// This check ensures our script only runs if the tool is actually on the page.
+if (document.querySelector('.phishfinder-tool')) {
+    phishFinderTool();
+}
+>>>>>>> Stashed changes
