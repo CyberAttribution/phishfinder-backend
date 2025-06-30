@@ -158,16 +158,27 @@ def check_start():
 @app.route("/api/result/<task_id>", methods=["GET"])
 def get_result(task_id):
     task = celery.AsyncResult(task_id)
-    if task.state == 'PENDING':
-        response = {'state': task.state, 'status': 'Pending...'}
-    elif task.state != 'FAILURE':
-        # This now correctly handles our custom result format
+    
+    response = {}
+    if task.state == 'SUCCESS':
+        # The task is complete. Let's unwrap the result.
         task_info = task.info if isinstance(task.info, dict) else {}
-        response = {'state': task.state, 'data': task_info}
-    else: 
-        response = {'state': task.state, 'status': str(task.info)}
-    return jsonify(response)
+        
+        # This is the key change: we extract the nested 'result' dictionary
+        # and place it directly into the 'data' key for the frontend.
+        response = {
+            'state': task.state, 
+            'data': task_info.get('result') 
+        }
 
+    elif task.state == 'FAILURE':
+        # The task failed. Report the error.
+        response = {'state': task.state, 'status': str(task.info)}
+    else:
+        # The task is still PENDING or in another state.
+        response = {'state': task.state, 'status': 'Processing...'}
+        
+    return jsonify(response)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
