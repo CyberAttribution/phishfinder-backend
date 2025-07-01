@@ -13,11 +13,16 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from celery import Celery
 
-# --- FLASK APP INITIALIZATION ---
-app = Flask(__name__)
+# In app.py
+
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["https://phishfinder.bot", "https://phishfinder-assets.onrender.com"]
+        "origins": [
+            "https://phishfinder.bot",
+            "https://www.phishfinder.bot",
+            "https://phishfinder-assets.onrender.com",
+            "chrome-extension://jamobibjpfcllagcdmefmnplcmobldbb"
+        ]
     }
 })
 
