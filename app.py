@@ -51,10 +51,8 @@ def get_risk_details(score):
 
 # --- CELERY BACKGROUND TASKS ---
 
-# Task 1: For Standard (Fast) Analysis
 @celery.task
 def standard_analysis_task(user_input):
-    # This is the code block you posted
     print(f"WORKER (Flash): Starting standard analysis for '{user_input}'...")
     analysis_target = ""
     if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
@@ -66,27 +64,6 @@ def standard_analysis_task(user_input):
 
     if analysis_target in ALLOW_LIST:
         return {"status": "Complete", "result": {"risk": {"level": "Low", "score": 0}, "summary": "Domain is on allow-list."}}
-    
-    # ... (The rest of the logic using Gemini 1.5 FLASH) ...
-
-
-# Task 2: For Deep (Thorough) Analysis
-@celery.task
-def deep_analysis_task(user_input):
-    # You duplicate the same initial logic here
-    print(f"WORKER (Pro): Starting DEEP analysis for '{user_input}'...")
-    analysis_target = ""
-    if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
-        _, domain_from_email = user_input.split('@', 1)
-        analysis_target = domain_from_email.lower()
-    else:
-        match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', user_input)
-        analysis_target = match.group(1).lower() if match else user_input.lower()
-
-    if analysis_target in ALLOW_LIST:
-        return {"status": "Complete", "result": {"risk": {"level": "Low", "score": 0}, "summary": "Domain is on allow-list."}}
-
-    # ... (The rest of the logic using Gemini 1.5 PRO) ...
 
     creation_date_str = "Not available"
     try:
@@ -119,7 +96,8 @@ def deep_analysis_task(user_input):
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"response_mime_type": "application/json", "response_schema": { "type": "object", "properties": { "risk_score": {"type": "integer"}, "summary": {"type": "string"}, "watchFor": {"type": "array", "items": {"type": "string"}}, "advice": {"type": "string"} } } }
         }
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GEMINI_API_KEY}"
+        # Using the FLASH model for the standard task
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
         
         print("WORKER: Calling Gemini API...")
         response = requests.post(url, headers=headers, json=body, timeout=40)
@@ -132,7 +110,6 @@ def deep_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
-        # This is the line that could fail
         gemini_output_json_str = result["candidates"][0]["content"]["parts"][0]["text"]
         gemini_data = json.loads(gemini_output_json_str)
 
@@ -158,6 +135,90 @@ def deep_analysis_task(user_input):
     print("WORKER: Analysis complete.")
     return {"status": "Complete", "result": final_response_data}
 
+
+@celery.task
+def deep_analysis_task(user_input):
+    print(f"WORKER (Pro): Starting DEEP analysis for '{user_input}'...")
+    analysis_target = ""
+    if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
+        _, domain_from_email = user_input.split('@', 1)
+        analysis_target = domain_from_email.lower()
+    else:
+        match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', user_input)
+        analysis_target = match.group(1).lower() if match else user_input.lower()
+
+    if analysis_target in ALLOW_LIST:
+        return {"status": "Complete", "result": {"risk": {"level": "Low", "score": 0}, "summary": "Domain is on allow-list."}}
+
+    creation_date_str = "Not available"
+    try:
+        domain_info = whois.whois(analysis_target)
+        creation_date = domain_info.creation_date[0] if isinstance(domain_info.creation_date, list) else domain_info.creation_date
+        if creation_date:
+            creation_date_str = creation_date.strftime("%Y-%m-%d")
+    except Exception as e:
+        print(f"WORKER: WHOIS failed: {e}")
+
+    mx_records_found = "No"
+    try:
+        if resolver.resolve(analysis_target, 'MX'):
+            mx_records_found = "Yes"
+    except Exception as e:
+        print(f"WORKER: MX lookup failed: {e}")
+
+    prompt_template = (
+        "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
+        "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
+        "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
+        "Provide a risk score (1-100), a concise summary, a list of warning signs ('watchFor'), and brief 'advice' for a non-technical user. "
+        "Format the entire response as a single JSON object with keys: risk_score, summary, watchFor, advice."
+    )
+    prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
+    
+    try:
+        headers = {"Content-Type": "application/json"}
+        body = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"response_mime_type": "application/json", "response_schema": { "type": "object", "properties": { "risk_score": {"type": "integer"}, "summary": {"type": "string"}, "watchFor": {"type": "array", "items": {"type": "string"}}, "advice": {"type": "string"} } } }
+        }
+        # Using the PRO model for the deep task
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GEMINI_API_KEY}"
+        
+        print("WORKER: Calling Gemini API...")
+        response = requests.post(url, headers=headers, json=body, timeout=90) # Longer timeout for Pro
+
+        if not response.ok:
+            return {"status": "Error", "result": f"Gemini API returned status {response.status_code}"}
+
+        result = response.json()
+        
+        if "candidates" not in result or not result["candidates"]:
+            return {"status": "Error", "result": "Gemini returned no valid candidates"}
+        
+        gemini_output_json_str = result["candidates"][0]["content"]["parts"][0]["text"]
+        gemini_data = json.loads(gemini_output_json_str)
+
+    except requests.exceptions.Timeout:
+        return {"status": "Error", "result": "Gemini API call timed out."}
+    except json.JSONDecodeError:
+        return {"status": "Error", "result": "Failed to decode a malformed JSON response from Gemini."}
+    except Exception as e:
+        print(f"WORKER: An unexpected error occurred during API call: {e}")
+        return {"status": "Error", "result": "An unexpected error occurred during analysis."}
+
+    risk_score = gemini_data.get("risk_score", 0)
+    risk_details = get_risk_details(risk_score)
+    
+    final_response_data = {
+        "risk": {"level": risk_details["level"], "class": risk_details["class"], "score": risk_score},
+        "summary": gemini_data.get("summary"),
+        "watchFor": gemini_data.get("watchFor"),
+        "advice": gemini_data.get("advice"),
+        "domainAge": creation_date_str,
+        "mxRecords": mx_records_found
+    }
+    print("WORKER: Analysis complete.")
+    return {"status": "Complete", "result": final_response_data}
 
 # --- API ENDPOINTS ---
 @app.route('/')
