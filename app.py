@@ -15,6 +15,11 @@ from celery import Celery
 
 # In app.py
 
+# --- FLASK APP INITIALIZATION ---
+app = Flask(__name__)
+
+# --- CORS CONFIGURATION ---
+# This must come AFTER app = Flask(__name__)
 CORS(app, resources={
     r"/api/*": {
         "origins": [
@@ -26,8 +31,7 @@ CORS(app, resources={
     }
 })
 
-# --- CELERY CONFIGURATION (CORRECTED FOR PRODUCTION) ---
-# This now correctly reads the Redis URL from the environment variables you set in Render.
+# --- CELERY CONFIGURATION ---
 redis_url = os.environ.get('CELERY_BROKER_URL')
 app.config.update(
     CELERY_BROKER_URL=redis_url,
@@ -35,6 +39,8 @@ app.config.update(
 )
 celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
 celery.conf.update(app.config)
+
+# ... (The rest of your code, like the ALLOW_LIST and your @celery.task functions, follows here)
 
 # --- ORIGINAL CONFIGURATION & HELPERS ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
