@@ -15,7 +15,11 @@ from celery import Celery
 
 # --- FLASK APP INITIALIZATION ---
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["https://phishfinder.bot", "https://phishfinder-assets.onrender.com"]
+    }
+})
 
 # --- CELERY CONFIGURATION (CORRECTED FOR PRODUCTION) ---
 # This now correctly reads the Redis URL from the environment variables you set in Render.
@@ -45,10 +49,13 @@ def get_risk_details(score):
         return {"level": "Low", "class": "low"}
 
 
-# --- CELERY BACKGROUND TASK (FINAL ROBUST VERSION) ---
+# --- CELERY BACKGROUND TASKS ---
+
+# Task 1: For Standard (Fast) Analysis
 @celery.task
-def long_running_analysis_task(user_input):
-    print(f"WORKER: Starting full analysis for '{user_input}'...")
+def standard_analysis_task(user_input):
+    # This is the code block you posted
+    print(f"WORKER (Flash): Starting standard analysis for '{user_input}'...")
     analysis_target = ""
     if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
         _, domain_from_email = user_input.split('@', 1)
@@ -59,6 +66,27 @@ def long_running_analysis_task(user_input):
 
     if analysis_target in ALLOW_LIST:
         return {"status": "Complete", "result": {"risk": {"level": "Low", "score": 0}, "summary": "Domain is on allow-list."}}
+    
+    # ... (The rest of the logic using Gemini 1.5 FLASH) ...
+
+
+# Task 2: For Deep (Thorough) Analysis
+@celery.task
+def deep_analysis_task(user_input):
+    # You duplicate the same initial logic here
+    print(f"WORKER (Pro): Starting DEEP analysis for '{user_input}'...")
+    analysis_target = ""
+    if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
+        _, domain_from_email = user_input.split('@', 1)
+        analysis_target = domain_from_email.lower()
+    else:
+        match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', user_input)
+        analysis_target = match.group(1).lower() if match else user_input.lower()
+
+    if analysis_target in ALLOW_LIST:
+        return {"status": "Complete", "result": {"risk": {"level": "Low", "score": 0}, "summary": "Domain is on allow-list."}}
+
+    # ... (The rest of the logic using Gemini 1.5 PRO) ...
 
     creation_date_str = "Not available"
     try:
@@ -138,44 +166,51 @@ def home():
 
 @app.route('/health')
 def health_check():
-    """
-    A simple health check endpoint that platforms like Render can use.
-    """
+    """A simple health check endpoint that platforms like Render can use."""
     return "OK", 200
 
 @app.route("/api/check", methods=["POST"])
 def check_start():
+    """Triggers the STANDARD (fast) analysis."""
     data = request.get_json()
     user_input = data.get("prompt")
     if not user_input:
         return jsonify({"error": "Missing input"}), 400
     
-    print(f"MANAGER: Received request for '{user_input}'. Sending to worker.")
-    task = long_running_analysis_task.delay(user_input)
+    print(f"MANAGER: Received standard request for '{user_input}'. Sending to Flash worker.")
+    # Note: This now calls your new standard_analysis_task
+    task = standard_analysis_task.delay(user_input)
+    
+    return jsonify({"status": "pending", "task_id": task.id}), 202
+
+@app.route("/api/deep-check", methods=["POST"])
+def deep_check_start():
+    """Triggers the DEEP (thorough) analysis."""
+    data = request.get_json()
+    user_input = data.get("prompt")
+    if not user_input:
+        return jsonify({"error": "Missing input"}), 400
+    
+    print(f"MANAGER: Received DEEP analysis request for '{user_input}'. Sending to Pro worker.")
+    task = deep_analysis_task.delay(user_input)
     
     return jsonify({"status": "pending", "task_id": task.id}), 202
 
 @app.route("/api/result/<task_id>", methods=["GET"])
 def get_result(task_id):
+    """Gets the result for ANY task, standard or deep."""
     task = celery.AsyncResult(task_id)
     
     response = {}
     if task.state == 'SUCCESS':
-        # The task is complete. Let's unwrap the result.
         task_info = task.info if isinstance(task.info, dict) else {}
-        
-        # This is the key change: we extract the nested 'result' dictionary
-        # and place it directly into the 'data' key for the frontend.
         response = {
             'state': task.state, 
             'data': task_info.get('result') 
         }
-
     elif task.state == 'FAILURE':
-        # The task failed. Report the error.
         response = {'state': task.state, 'status': str(task.info)}
-    else:
-        # The task is still PENDING or in another state.
+    else: # PENDING or other states
         response = {'state': task.state, 'status': 'Processing...'}
         
     return jsonify(response)
