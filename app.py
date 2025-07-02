@@ -104,7 +104,7 @@ def standard_analysis_task(user_input):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
         
         print("WORKER: Calling Gemini API...")
-        response = requests.post(url, headers=headers, json=body, timeout=60) # Increased timeout
+        response = requests.post(url, headers=headers, json=body, timeout=60)
 
         if not response.ok:
             return {"status": "Error", "result": f"Gemini API returned status {response.status_code}"}
@@ -114,8 +114,14 @@ def standard_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
-        gemini_output_json_str = result["candidates"][0]["content"]["parts"][0]["text"]
-        gemini_data = json.loads(gemini_output_json_str)
+        # CORRECTED: Robustly parse the JSON response
+        raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+        match = re.search(r"```json\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+        if match:
+            json_str = match.group(1)
+        else:
+            json_str = raw_text
+        gemini_data = json.loads(json_str)
 
     except requests.exceptions.Timeout:
         return {"status": "Error", "result": "Gemini API call timed out."}
@@ -198,8 +204,14 @@ def deep_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
-        gemini_output_json_str = result["candidates"][0]["content"]["parts"][0]["text"]
-        gemini_data = json.loads(gemini_output_json_str)
+        # CORRECTED: Robustly parse the JSON response
+        raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+        match = re.search(r"```json\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+        if match:
+            json_str = match.group(1)
+        else:
+            json_str = raw_text
+        gemini_data = json.loads(json_str)
 
     except requests.exceptions.Timeout:
         return {"status": "Error", "result": "Gemini API call timed out."}
@@ -284,7 +296,6 @@ def subscribe():
         return jsonify({"error": "Email is required"}), 400
 
     email = data['email']
-    # In a real application, you would save this email to a database or mailing list service.
     print(f"MANAGER: New subscription from {email}")
 
     return jsonify({"message": "Subscription successful!"}), 200
