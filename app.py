@@ -2,7 +2,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
-import time
 import re
 import json
 import whois
@@ -114,7 +113,6 @@ def standard_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
-        # CORRECTED: Robustly parse the JSON response
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
         match = re.search(r"```json\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
         if match:
@@ -204,7 +202,6 @@ def deep_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
-        # CORRECTED: Robustly parse the JSON response
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
         match = re.search(r"```json\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
         if match:
