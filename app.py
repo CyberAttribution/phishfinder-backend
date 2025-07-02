@@ -13,13 +13,10 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from celery import Celery
 
-# In app.py
-
 # --- FLASK APP INITIALIZATION ---
 app = Flask(__name__)
 
 # --- CORS CONFIGURATION ---
-# This must come AFTER app = Flask(__name__)
 CORS(app, resources={
     r"/api/*": {
         "origins": [
@@ -40,8 +37,6 @@ app.config.update(
 celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
 celery.conf.update(app.config)
 
-# ... (The rest of your code, like the ALLOW_LIST and your @celery.task functions, follows here)
-
 # --- ORIGINAL CONFIGURATION & HELPERS ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 ALLOW_LIST = {
@@ -61,7 +56,6 @@ def get_risk_details(score):
 
 
 # --- CELERY BACKGROUND TASKS ---
-
 @celery.task
 def standard_analysis_task(user_input):
     print(f"WORKER (Flash): Starting standard analysis for '{user_input}'...")
@@ -107,11 +101,10 @@ def standard_analysis_task(user_input):
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"response_mime_type": "application/json", "response_schema": { "type": "object", "properties": { "risk_score": {"type": "integer"}, "summary": {"type": "string"}, "watchFor": {"type": "array", "items": {"type": "string"}}, "advice": {"type": "string"} } } }
         }
-        # Using the FLASH model for the standard task
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
         
         print("WORKER: Calling Gemini API...")
-        response = requests.post(url, headers=headers, json=body, timeout=40)
+        response = requests.post(url, headers=headers, json=body, timeout=60) # Increased timeout
 
         if not response.ok:
             return {"status": "Error", "result": f"Gemini API returned status {response.status_code}"}
@@ -192,11 +185,10 @@ def deep_analysis_task(user_input):
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"response_mime_type": "application/json", "response_schema": { "type": "object", "properties": { "risk_score": {"type": "integer"}, "summary": {"type": "string"}, "watchFor": {"type": "array", "items": {"type": "string"}}, "advice": {"type": "string"} } } }
         }
-        # Using the PRO model for the deep task
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GEMINI_API_KEY}"
         
         print("WORKER: Calling Gemini API...")
-        response = requests.post(url, headers=headers, json=body, timeout=90) # Longer timeout for Pro
+        response = requests.post(url, headers=headers, json=body, timeout=90)
 
         if not response.ok:
             return {"status": "Error", "result": f"Gemini API returned status {response.status_code}"}
@@ -231,6 +223,7 @@ def deep_analysis_task(user_input):
     print("WORKER: Analysis complete.")
     return {"status": "Complete", "result": final_response_data}
 
+
 # --- API ENDPOINTS ---
 @app.route('/')
 def home():
@@ -243,21 +236,18 @@ def health_check():
 
 @app.route("/api/check", methods=["POST"])
 def check_start():
-    """Triggers the STANDARD (fast) analysis."""
     data = request.get_json()
     user_input = data.get("prompt")
     if not user_input:
         return jsonify({"error": "Missing input"}), 400
     
     print(f"MANAGER: Received standard request for '{user_input}'. Sending to Flash worker.")
-    # Note: This now calls your new standard_analysis_task
     task = standard_analysis_task.delay(user_input)
     
     return jsonify({"status": "pending", "task_id": task.id}), 202
 
 @app.route("/api/deep-check", methods=["POST"])
 def deep_check_start():
-    """Triggers the DEEP (thorough) analysis."""
     data = request.get_json()
     user_input = data.get("prompt")
     if not user_input:
@@ -270,7 +260,6 @@ def deep_check_start():
 
 @app.route("/api/result/<task_id>", methods=["GET"])
 def get_result(task_id):
-    """Gets the result for ANY task, standard or deep."""
     task = celery.AsyncResult(task_id)
     
     response = {}
@@ -282,10 +271,24 @@ def get_result(task_id):
         }
     elif task.state == 'FAILURE':
         response = {'state': task.state, 'status': str(task.info)}
-    else: # PENDING or other states
+    else:
         response = {'state': task.state, 'status': 'Processing...'}
         
     return jsonify(response)
+
+# --- ADDED SUBSCRIBE ENDPOINT ---
+@app.route("/api/subscribe", methods=["POST"])
+def subscribe():
+    data = request.get_json()
+    if not data or 'email' not in data:
+        return jsonify({"error": "Email is required"}), 400
+
+    email = data['email']
+    # In a real application, you would save this email to a database or mailing list service.
+    print(f"MANAGER: New subscription from {email}")
+
+    return jsonify({"message": "Subscription successful!"}), 200
+
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 10000))
