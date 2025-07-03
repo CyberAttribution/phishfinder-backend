@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import time
 import re
 import json
 import whois
@@ -102,8 +103,17 @@ def standard_analysis_task(user_input):
         }
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
         
+        # ADDED TIMING LOGIC
         print("WORKER: Calling Gemini API...")
-        response = requests.post(url, headers=headers, json=body, timeout=60)
+        start_time = time.time()
+        try:
+            response = requests.post(url, headers=headers, json=body, timeout=60)
+            duration = time.time() - start_time
+            print(f"WORKER: Gemini API call took {duration:.2f} seconds.")
+        except requests.exceptions.Timeout:
+            duration = time.time() - start_time
+            print(f"WORKER: Gemini API call timed out after {duration:.2f} seconds.")
+            return {"status": "Error", "result": "Gemini API call timed out."}
 
         if not response.ok:
             return {"status": "Error", "result": f"Gemini API returned status {response.status_code}"}
@@ -113,14 +123,11 @@ def standard_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
-        # CORRECTED: More robustly parse the JSON response
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
         json_str = re.sub(r"^```json\s*", "", raw_text.strip())
         json_str = re.sub(r"\s*```$", "", json_str)
         gemini_data = json.loads(json_str)
 
-    except requests.exceptions.Timeout:
-        return {"status": "Error", "result": "Gemini API call timed out."}
     except json.JSONDecodeError:
         return {"status": "Error", "result": "Failed to decode a malformed JSON response from Gemini."}
     except Exception as e:
@@ -189,8 +196,17 @@ def deep_analysis_task(user_input):
         }
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GEMINI_API_KEY}"
         
+        # ADDED TIMING LOGIC
         print("WORKER: Calling Gemini API...")
-        response = requests.post(url, headers=headers, json=body, timeout=90)
+        start_time = time.time()
+        try:
+            response = requests.post(url, headers=headers, json=body, timeout=120) # Increased timeout
+            duration = time.time() - start_time
+            print(f"WORKER: Gemini API call took {duration:.2f} seconds.")
+        except requests.exceptions.Timeout:
+            duration = time.time() - start_time
+            print(f"WORKER: Gemini API call timed out after {duration:.2f} seconds.")
+            return {"status": "Error", "result": "Gemini API call timed out."}
 
         if not response.ok:
             return {"status": "Error", "result": f"Gemini API returned status {response.status_code}"}
@@ -200,14 +216,11 @@ def deep_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
-        # CORRECTED: More robustly parse the JSON response
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
         json_str = re.sub(r"^```json\s*", "", raw_text.strip())
         json_str = re.sub(r"\s*```$", "", json_str)
         gemini_data = json.loads(json_str)
 
-    except requests.exceptions.Timeout:
-        return {"status": "Error", "result": "Gemini API call timed out."}
     except json.JSONDecodeError:
         return {"status": "Error", "result": "Failed to decode a malformed JSON response from Gemini."}
     except Exception as e:
