@@ -113,12 +113,10 @@ def standard_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
+        # CORRECTED: More robustly parse the JSON response
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-        match = re.search(r"```json\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
-        if match:
-            json_str = match.group(1)
-        else:
-            json_str = raw_text
+        json_str = re.sub(r"^```json\s*", "", raw_text.strip())
+        json_str = re.sub(r"\s*```$", "", json_str)
         gemini_data = json.loads(json_str)
 
     except requests.exceptions.Timeout:
@@ -202,12 +200,10 @@ def deep_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
+        # CORRECTED: More robustly parse the JSON response
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-        match = re.search(r"```json\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
-        if match:
-            json_str = match.group(1)
-        else:
-            json_str = raw_text
+        json_str = re.sub(r"^```json\s*", "", raw_text.strip())
+        json_str = re.sub(r"\s*```$", "", json_str)
         gemini_data = json.loads(json_str)
 
     except requests.exceptions.Timeout:
