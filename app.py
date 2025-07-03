@@ -103,7 +103,6 @@ def standard_analysis_task(user_input):
         }
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
         
-        # ADDED TIMING LOGIC
         print("WORKER: Calling Gemini API...")
         start_time = time.time()
         try:
@@ -123,10 +122,14 @@ def standard_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
+        # CORRECTED: More resiliently parse the JSON response
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-        json_str = re.sub(r"^```json\s*", "", raw_text.strip())
-        json_str = re.sub(r"\s*```$", "", json_str)
-        gemini_data = json.loads(json_str)
+        match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+        if match:
+            json_str = match.group(0)
+            gemini_data = json.loads(json_str)
+        else:
+            return {"status": "Error", "result": "No valid JSON object found in Gemini response."}
 
     except json.JSONDecodeError:
         return {"status": "Error", "result": "Failed to decode a malformed JSON response from Gemini."}
@@ -196,11 +199,10 @@ def deep_analysis_task(user_input):
         }
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={GEMINI_API_KEY}"
         
-        # ADDED TIMING LOGIC
         print("WORKER: Calling Gemini API...")
         start_time = time.time()
         try:
-            response = requests.post(url, headers=headers, json=body, timeout=120) # Increased timeout
+            response = requests.post(url, headers=headers, json=body, timeout=120)
             duration = time.time() - start_time
             print(f"WORKER: Gemini API call took {duration:.2f} seconds.")
         except requests.exceptions.Timeout:
@@ -216,10 +218,14 @@ def deep_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
+        # CORRECTED: More resiliently parse the JSON response
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-        json_str = re.sub(r"^```json\s*", "", raw_text.strip())
-        json_str = re.sub(r"\s*```$", "", json_str)
-        gemini_data = json.loads(json_str)
+        match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+        if match:
+            json_str = match.group(0)
+            gemini_data = json.loads(json_str)
+        else:
+            return {"status": "Error", "result": "No valid JSON object found in Gemini response."}
 
     except json.JSONDecodeError:
         return {"status": "Error", "result": "Failed to decode a malformed JSON response from Gemini."}
