@@ -86,7 +86,6 @@ def standard_analysis_task(user_input):
     except Exception as e:
         print(f"WORKER: MX lookup failed: {e}")
 
-    # CORRECTED PROMPT TEMPLATE
     prompt_template = (
         "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
         "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
@@ -176,7 +175,6 @@ def deep_analysis_task(user_input):
     except Exception as e:
         print(f"WORKER: MX lookup failed: {e}")
 
-    # CORRECTED PROMPT TEMPLATE
     prompt_template = (
         "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
         "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
