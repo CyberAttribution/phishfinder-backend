@@ -86,11 +86,12 @@ def standard_analysis_task(user_input):
     except Exception as e:
         print(f"WORKER: MX lookup failed: {e}")
 
+    # CORRECTED PROMPT TEMPLATE
     prompt_template = (
         "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
         "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
         "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
-        "Provide a risk score (1-100), a concise summary, a list of warning signs ('watchFor'), and brief 'advice' for a non-technical user. "
+        "Provide a risk score (1-100), a concise summary, a list of the top 3-5 most relevant warning signs ('watchFor'), and brief 'advice' for a non-technical user. "
         "Format the entire response as a single JSON object with keys: risk_score, summary, watchFor, advice."
     )
     prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
@@ -104,15 +105,7 @@ def standard_analysis_task(user_input):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
         
         print("WORKER: Calling Gemini API...")
-        start_time = time.time()
-        try:
-            response = requests.post(url, headers=headers, json=body, timeout=60)
-            duration = time.time() - start_time
-            print(f"WORKER: Gemini API call took {duration:.2f} seconds.")
-        except requests.exceptions.Timeout:
-            duration = time.time() - start_time
-            print(f"WORKER: Gemini API call timed out after {duration:.2f} seconds.")
-            return {"status": "Error", "result": "Gemini API call timed out."}
+        response = requests.post(url, headers=headers, json=body, timeout=60)
 
         if not response.ok:
             return {"status": "Error", "result": f"Gemini API returned status {response.status_code}"}
@@ -122,7 +115,6 @@ def standard_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
-        # CORRECTED: More resiliently parse the JSON response
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
         match = re.search(r"\{.*\}", raw_text, re.DOTALL)
         if match:
@@ -131,6 +123,8 @@ def standard_analysis_task(user_input):
         else:
             return {"status": "Error", "result": "No valid JSON object found in Gemini response."}
 
+    except requests.exceptions.Timeout:
+        return {"status": "Error", "result": "Gemini API call timed out."}
     except json.JSONDecodeError:
         return {"status": "Error", "result": "Failed to decode a malformed JSON response from Gemini."}
     except Exception as e:
@@ -182,11 +176,12 @@ def deep_analysis_task(user_input):
     except Exception as e:
         print(f"WORKER: MX lookup failed: {e}")
 
+    # CORRECTED PROMPT TEMPLATE
     prompt_template = (
         "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
         "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
         "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
-        "Provide a risk score (1-100), a concise summary, a list of warning signs ('watchFor'), and brief 'advice' for a non-technical user. "
+        "Provide a risk score (1-100), a concise summary, a list of the top 3-5 most relevant warning signs ('watchFor'), and brief 'advice' for a non-technical user. "
         "Format the entire response as a single JSON object with keys: risk_score, summary, watchFor, advice."
     )
     prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
@@ -218,7 +213,6 @@ def deep_analysis_task(user_input):
         if "candidates" not in result or not result["candidates"]:
             return {"status": "Error", "result": "Gemini returned no valid candidates"}
         
-        # CORRECTED: More resiliently parse the JSON response
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
         match = re.search(r"\{.*\}", raw_text, re.DOTALL)
         if match:
@@ -300,7 +294,6 @@ def get_result(task_id):
         
     return jsonify(response)
 
-# --- ADDED SUBSCRIBE ENDPOINT ---
 @app.route("/api/subscribe", methods=["POST"])
 def subscribe():
     data = request.get_json()
