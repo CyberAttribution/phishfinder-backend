@@ -136,6 +136,9 @@ def generate_analysis_stream(user_input):
     prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
     
     try:
+        if not GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY is not set in the environment.")
+
         headers = {"Content-Type": "application/json"}
         body = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -162,12 +165,9 @@ def generate_analysis_stream(user_input):
         result = response.json()
         
         if "candidates" not in result or not result["candidates"]:
-            # This can happen if the prompt is blocked for safety reasons.
             error_reason = result.get('promptFeedback', {}).get('blockReason', 'No valid candidates returned')
             raise ValueError(f"Gemini response blocked or empty. Reason: {error_reason}")
         
-        # --- ROBUST JSON PARSING ---
-        # Re-introducing your proven method to handle imperfect responses.
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
         match = re.search(r"\{.*\}", raw_text, re.DOTALL)
         if not match:
@@ -175,9 +175,7 @@ def generate_analysis_stream(user_input):
         
         json_str = match.group(0)
         gemini_data = json.loads(json_str)
-        # --- END OF ROBUST PARSING ---
 
-        # 5. Stream the Gemini results piece by piece
         risk_score = gemini_data.get("risk_score", 0)
         risk_details = get_risk_details(risk_score)
         yield json.dumps({"type": "risk", "content": {"level": risk_details["level"], "class": risk_details["class"], "score": risk_score}}) + '\n'
@@ -190,22 +188,23 @@ def generate_analysis_stream(user_input):
             yield json.dumps({"type": "watchFor", "content": item}) + '\n'
             time.sleep(0.1)
         
-        # THIS IS THE NEWLY ADDED ADVICE CHUNK
         yield json.dumps({"type": "advice", "content": gemini_data.get("advice", "N/A")}) + '\n'
 
-    # NEW: More specific error handling
     except requests.exceptions.RequestException as e:
         print(f"STREAM: Network error calling Gemini API: {e}")
         yield json.dumps({"type": "error", "content": "Could not connect to the analysis service. Please check your connection."}) + '\n'
     except (KeyError, IndexError, ValueError) as e:
         print(f"STREAM: Error parsing Gemini response: {e}")
-        yield json.dumps({"type": "error", "content": "Received an invalid or unexpected response from the analysis service."}) + '\n'
+        yield json.dumps({"type": "error", "content": f"Received an invalid response from the analysis service. Details: {e}"}) + '\n'
     except json.JSONDecodeError as e:
         print(f"STREAM: Failed to decode JSON from Gemini response: {e}")
         yield json.dumps({"type": "error", "content": "The analysis service returned a malformed response."}) + '\n'
     except Exception as e:
-        print(f"STREAM: An unexpected error occurred: {e}")
-        yield json.dumps({"type": "error", "content": "An unknown backend error occurred. Please try again later."}) + '\n'
+        # --- THIS BLOCK IS UPDATED FOR BETTER DEBUGGING ---
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"STREAM: An unexpected error occurred: {e}\n{error_details}")
+        yield json.dumps({"type": "error", "content": f"An unknown backend error occurred. Please contact support. Details: {e}"}) + '\n'
 
 
 # --- API ENDPOINTS ---
@@ -225,7 +224,6 @@ def stream_analysis():
     if not user_input:
         return jsonify({"error": "Missing input"}), 400
     
-    # Return a streaming response by passing the generator function
     return Response(generate_analysis_stream(user_input), mimetype='application/x-ndjson')
 
 
