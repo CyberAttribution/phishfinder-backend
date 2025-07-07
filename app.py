@@ -86,11 +86,12 @@ def standard_analysis_task(user_input):
     except Exception as e:
         print(f"WORKER: MX lookup failed: {e}")
 
+    # UPDATED PROMPT TEMPLATE
     prompt_template = (
         "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
         "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
         "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
-        "Provide a risk score (1-100), a concise summary, a list of the 5 to 7 most relevant warning signs ('watchFor'), and one sentence of 'advice' for a non-technical user. "
+        "Provide a risk score (1-100), a concise summary, a list of the 5 to 7 most relevant warning signs ('watchFor'), and a brief 'advice' section of 2-3 sentences for a non-technical user. "
         "Format the entire response as a single JSON object with keys: risk_score, summary, watchFor, advice."
     )
     prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
@@ -175,11 +176,12 @@ def deep_analysis_task(user_input):
     except Exception as e:
         print(f"WORKER: MX lookup failed: {e}")
 
+    # UPDATED PROMPT TEMPLATE
     prompt_template = (
         "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
         "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
         "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
-        "Provide a risk score (1-100), a concise summary, a list of the 5 to 7 most relevant warning signs ('watchFor'), and one sentence of 'advice' for a non-technical user. "
+        "Provide a risk score (1-100), a concise summary, a list of the 5 to 7 most relevant warning signs ('watchFor'), and a brief 'advice' section of 2-3 sentences for a non-technical user. "
         "Format the entire response as a single JSON object with keys: risk_score, summary, watchFor, advice."
     )
     prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
