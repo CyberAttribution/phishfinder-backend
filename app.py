@@ -1,278 +1,258 @@
-from dotenv import load_dotenv
-load_dotenv()
+// popup.js - Rewritten for Structured JSON Streaming
 
-import os
-import time
-import re
-import json
-import whois
-from datetime import datetime
-from dns import resolver
-import requests
-from flask import Flask, request, jsonify, Response # Import Response for streaming
-from flask_cors import CORS
-from celery import Celery
+document.addEventListener('DOMContentLoaded', function () {
+  // --- CONFIGURATION ---
+  const API_BASE_URL = 'https://phishfinder-backend.onrender.com';
 
-# --- FLASK APP INITIALIZATION ---
-app = Flask(__name__)
+  // --- ELEMENT REFERENCES ---
+  const standardCheckButton = document.getElementById('standardCheckButton');
+  const deepCheckButton = document.getElementById('deepCheckButton');
+  const phishInput = document.getElementById('phishInput');
+  const resultContainer = document.getElementById('result');
+  const subscribeButton = document.getElementById('subscribeButton');
+  const copyButton = document.getElementById('copyButton');
+  const copyAlertButton = document.getElementById('copyAlertButton');
+  const copySocialButton = document.getElementById('copySocialButton');
 
-# --- CORS CONFIGURATION ---
-CORS(app, resources={
-    r"/api/*": {
-        "origins": [
-            "https://phishfinder.bot",
-            "https://www.phishfinder.bot",
-            "https://phishfinder-assets.onrender.com",
-            # Make sure your Chrome extension ID is correct
-            "chrome-extension://jamobibjpfcllagcdmefmnplcmobldbb" 
-        ]
+
+  // --- STATE VARIABLES ---
+  let isAnalyzing = false;
+  let analysisController = null;
+
+  // --- EVENT LISTENERS ---
+  standardCheckButton.addEventListener('click', () => streamAnalysis());
+  deepCheckButton.addEventListener('click', () => streamAnalysis());
+  
+  if (subscribeButton) subscribeButton.addEventListener('click', handleSubscription);
+  if (copyButton) copyButton.addEventListener('click', copyMainResults);
+  if (copyAlertButton) copyAlertButton.addEventListener('click', () => copyTextFromElement('securityAlert', 'copyAlertButton'));
+  if (copySocialButton) copySocialButton.addEventListener('click', () => copyTextFromElement('socialPost', 'copySocialButton'));
+
+  // --- PRIMARY STREAMING WORKFLOW ---
+  async function streamAnalysis() {
+    if (isAnalyzing) return;
+    
+    const inputValue = phishInput.value.trim();
+    if (!inputValue) {
+      alert('Please enter a value to analyze.');
+      return;
     }
-})
 
-# --- CELERY CONFIGURATION (Existing) ---
-redis_url = os.environ.get('CELERY_BROKER_URL')
-if redis_url:
-    app.config.update(
-        CELERY_BROKER_URL=redis_url,
-        CELERY_RESULT_BACKEND=redis_url
-    )
-    celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
-    celery.conf.update(app.config)
-else:
-    celery = None # Handle case where Redis is not configured
-
-# --- ORIGINAL CONFIGURATION & HELPERS ---
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-ALLOW_LIST = {
-    "cyberattribution.ai", "aarp.org", "ncoa.org", "consumerfed.org",
-    "cyberseniors.org", "pta.org", "consumer.ftc.gov", "bbb.org",
-    "idtheftcenter.org", "lifelock.com", "phishfinder.bot",
-    "attributionengine.bot", "attributionagent.com", "attributionagent.ai",
-    "deerpfakedefender.ai"
-}
-def get_risk_details(score):
-    if score >= 80:
-        return {"level": "High", "class": "red"} # Matched to CSS class
-    elif score >= 50:
-        return {"level": "Medium", "class": "orange"} # Matched to CSS class
-    else:
-        return {"level": "Low", "class": "green"} # Matched to CSS class
-
-
-# --- CELERY BACKGROUND TASKS (Existing - Unchanged) ---
-if celery:
-    @celery.task
-    def standard_analysis_task(user_input):
-        print(f"WORKER (Flash): Starting standard analysis for '{user_input}'...")
-        # This function's logic is now used in the streaming generator
-        # It remains here to support the old polling method if needed
-        # (The full logic of your original function goes here)
-        # For brevity, I'm omitting the full copy, but it should be here.
-        return {"status": "Complete", "result": "Polling result would be here."}
-
-
-    @celery.task
-    def deep_analysis_task(user_input):
-        print(f"WORKER (Pro): Starting DEEP analysis for '{user_input}'...")
-        # Full logic of your original function
-        return {"status": "Complete", "result": "Polling result would be here."}
-
-
-# --- NEW STREAMING FUNCTIONALITY ---
-
-def generate_analysis_stream(user_input):
-    """
-    This is a generator function that performs the analysis and yields
-    JSON data chunks as they become available.
-    """
-    print(f"STREAM: Starting analysis for '{user_input}'...")
+    setLoadingState(true);
+    // Restore the detailed HTML structure for the results
+    restoreResultStructure(); 
     
-    # 1. Extract domain for analysis
-    analysis_target = ""
-    if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
-        _, domain_from_email = user_input.split('@', 1)
-        analysis_target = domain_from_email.lower()
-    else:
-        match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', user_input)
-        analysis_target = match.group(1).lower() if match else user_input.lower()
+    analysisController = new AbortController();
 
-    # 2. Check against allow list
-    if analysis_target in ALLOW_LIST:
-        yield json.dumps({"type": "risk", "content": {"level": "Low", "score": 0, "class": "green"}}) + '\n'
-        yield json.dumps({"type": "summary", "content": "This domain is on the PhishFinder allow list and is considered safe."}) + '\n'
-        return
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/stream-analysis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: inputValue }),
+        signal: analysisController.signal,
+      });
 
-    # 3. Perform initial checks and stream results immediately
-    creation_date_str = "Not available"
-    try:
-        domain_info = whois.whois(analysis_target)
-        creation_date = domain_info.creation_date
-        if isinstance(creation_date, list):
-            creation_date = creation_date[0]
-        if creation_date:
-            creation_date_str = creation_date.strftime("%Y-%m-%d")
-    except Exception as e:
-        print(f"STREAM: WHOIS failed: {e}")
-    yield json.dumps({"type": "domainAge", "content": creation_date_str}) + '\n'
-    time.sleep(0.1) # Small delay for better UX
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+      
+      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = '';
 
-    mx_records_found = "No"
-    try:
-        if resolver.resolve(analysis_target, 'MX'):
-            mx_records_found = "Yes"
-    except Exception as e:
-        print(f"STREAM: MX lookup failed: {e}")
-    yield json.dumps({"type": "mxRecords", "content": mx_records_found}) + '\n'
-    time.sleep(0.1)
+      // Read from the stream
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        
+        buffer += value;
 
-    # 4. Call Gemini API for the main analysis
-    prompt_template = (
-        "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
-        "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
-        "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
-        "Provide a risk score (1-100), a concise summary, a list of 5-7 relevant warning signs ('watchFor'), and brief 'advice' of 2-3 sentences for a non-technical user. "
-        "Format the entire response as a single JSON object with keys: risk_score, summary, watchFor, advice."
-    )
-    prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
-    
-    try:
-        if not GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY is not set in the environment.")
+        // Process all complete JSON objects in the buffer (separated by newlines)
+        let boundary;
+        while ((boundary = buffer.indexOf('\n')) >= 0) {
+          const jsonString = buffer.substring(0, boundary);
+          buffer = buffer.substring(boundary + 1);
+          
+          if (jsonString.trim() === '') continue;
 
-        headers = {"Content-Type": "application/json"}
-        body = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "response_schema": {
-                    "type": "object",
-                    "properties": {
-                        "risk_score": {"type": "integer"},
-                        "summary": {"type": "string"},
-                        "watchFor": {"type": "array", "items": {"type": "string"}},
-                        "advice": {"type": "string"}
-                    }
-                }
-            }
+          try {
+            const chunk = JSON.parse(jsonString);
+            updateUIWithChunk(chunk);
+          } catch (error) {
+            console.error('Failed to parse JSON chunk:', jsonString, error);
+          }
         }
-        # Using 1.5 Flash for speed in streaming context
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
-        
-        print("STREAM: Calling Gemini API...")
-        response = requests.post(url, headers=headers, json=body, timeout=60)
-        response.raise_for_status() # Raise an exception for bad status codes
+      }
 
-        result = response.json()
-        
-        if "candidates" not in result or not result["candidates"]:
-            error_reason = result.get('promptFeedback', {}).get('blockReason', 'No valid candidates returned')
-            raise ValueError(f"Gemini response blocked or empty. Reason: {error_reason}")
-        
-        raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-        match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-        if not match:
-            raise ValueError("No valid JSON object found in Gemini response.")
-        
-        json_str = match.group(0)
-        gemini_data = json.loads(json_str)
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('Streaming analysis error:', error);
+        showErrorState(`A critical error occurred: ${error.message}`);
+      }
+    } finally {
+      setLoadingState(false);
+    }
+  }
 
-        risk_score = gemini_data.get("risk_score", 0)
-        risk_details = get_risk_details(risk_score)
-        yield json.dumps({"type": "risk", "content": {"level": risk_details["level"], "class": risk_details["class"], "score": risk_score}}) + '\n'
-        time.sleep(0.1)
-        
-        yield json.dumps({"type": "summary", "content": gemini_data.get("summary", "N/A")}) + '\n'
-        time.sleep(0.1)
+  // --- UI HELPER FUNCTIONS ---
 
-        for item in gemini_data.get("watchFor", []):
-            yield json.dumps({"type": "watchFor", "content": item}) + '\n'
-            time.sleep(0.1)
-        
-        yield json.dumps({"type": "advice", "content": gemini_data.get("advice", "N/A")}) + '\n'
+  function restoreResultStructure() {
+    resultContainer.innerHTML = `
+      <p><strong>Phishing Risk:</strong> <span id="risk">Analyzing...</span></p>
+      <p><strong>Summary:</strong> <span id="summary"></span></p>
+      <p><strong>Domain Created:</strong> <span id="domainAge"></span></p> 
+      <p><strong>MX Records Found:</strong> <span id="mxRecords"></span></p>
+      <p><strong>What to Watch For:</strong></p>
+      <ul id="watchFor"></ul>
+      <p><strong>Advice:</strong> <span id="advice"></span></p>
+    `;
+    // Clear the generated content textareas as well
+    const actionableContentDiv = document.getElementById('actionable-content');
+    if (actionableContentDiv) {
+        actionableContentDiv.style.display = 'none';
+        document.getElementById('securityAlert').value = '';
+        document.getElementById('socialPost').value = '';
+    }
+  }
 
-    except requests.exceptions.RequestException as e:
-        print(f"STREAM: Network error calling Gemini API: {e}")
-        yield json.dumps({"type": "error", "content": "Could not connect to the analysis service. Please check your connection."}) + '\n'
-    except (KeyError, IndexError, ValueError) as e:
-        print(f"STREAM: Error parsing Gemini response: {e}")
-        yield json.dumps({"type": "error", "content": f"Received an invalid response from the analysis service. Details: {e}"}) + '\n'
-    except json.JSONDecodeError as e:
-        print(f"STREAM: Failed to decode JSON from Gemini response: {e}")
-        yield json.dumps({"type": "error", "content": "The analysis service returned a malformed response."}) + '\n'
-    except Exception as e:
-        # --- THIS BLOCK IS UPDATED FOR BETTER DEBUGGING ---
-        import traceback
-        error_details = traceback.format_exc()
-        print(f"STREAM: An unexpected error occurred: {e}\n{error_details}")
-        yield json.dumps({"type": "error", "content": f"An unknown backend error occurred. Please contact support. Details: {e}"}) + '\n'
+  function updateUIWithChunk(chunk) {
+    if (!chunk || !chunk.type || chunk.content === undefined) return;
 
+    // Hide the initial "Analyzing..." text for risk once we get the real value
+    if (chunk.type === 'risk' && document.getElementById('risk').textContent === 'Analyzing...') {
+        document.getElementById('risk').textContent = '';
+    }
 
-# --- API ENDPOINTS ---
-@app.route('/')
-def home():
-    return "PhishFinder Python Backend is running!"
+    switch (chunk.type) {
+      case 'risk':
+        const riskSpan = document.getElementById('risk');
+        riskSpan.textContent = `${chunk.content.level} (${chunk.content.score}/100)`;
+        riskSpan.className = chunk.content.class.toLowerCase();
+        break;
+      case 'summary':
+        document.getElementById('summary').textContent = chunk.content;
+        break;
+      case 'domainAge':
+        document.getElementById('domainAge').textContent = chunk.content;
+        break;
+      case 'mxRecords':
+        document.getElementById('mxRecords').textContent = chunk.content;
+        break;
+      case 'watchFor':
+        const watchForList = document.getElementById('watchFor');
+        const li = document.createElement('li');
+        li.textContent = chunk.content;
+        watchForList.appendChild(li);
+        break;
+      case 'advice':
+        document.getElementById('advice').textContent = chunk.content;
+        break;
+      case 'generated': // For actionable content
+         const actionableContentDiv = document.getElementById('actionable-content');
+         if (actionableContentDiv) {
+            actionableContentDiv.style.display = 'block';
+            document.getElementById('securityAlert').value = chunk.content.securityAlert;
+            document.getElementById('socialPost').value = chunk.content.socialPost;
+         }
+         break;
+      case 'error':
+        showErrorState(chunk.content);
+        break;
+    }
+  }
 
-@app.route('/health')
-def health_check():
-    return "OK", 200
+  function setLoadingState(isLoading) {
+    isAnalyzing = isLoading;
+    standardCheckButton.disabled = isLoading;
+    deepCheckButton.disabled = isLoading;
 
-# --- NEW STREAMING ENDPOINT ---
-@app.route("/api/stream-analysis", methods=["POST"])
-def stream_analysis():
-    data = request.get_json()
-    user_input = data.get("prompt")
-    if not user_input:
-        return jsonify({"error": "Missing input"}), 400
-    
-    return Response(generate_analysis_stream(user_input), mimetype='application/x-ndjson')
+    if (isLoading) {
+      standardCheckButton.textContent = 'Analyzing...';
+      deepCheckButton.textContent = 'Analyzing...';
+    } else {
+      standardCheckButton.textContent = 'Standard Analysis';
+      deepCheckButton.textContent = 'Deep Analysis';
+      // Show copy and VirusTotal buttons after analysis
+      if(document.getElementById('copyButton')) document.getElementById('copyButton').style.display = 'inline-block';
+      const virusTotalLink = document.getElementById('virusTotalLink');
+      if(virusTotalLink) {
+          virusTotalLink.style.display = 'inline-block';
+          virusTotalLink.href = `https://www.virustotal.com/gui/search/${encodeURIComponent(phishInput.value)}`;
+      }
+    }
+  }
 
+  function showErrorState(message) {
+    setLoadingState(false);
+    resultContainer.innerHTML = `
+      <p><strong>Phishing Risk:</strong> <span id="risk" class="red">Error</span></p>
+      <p><strong>Summary:</strong> <span id="summary">${message}</span></p>
+    `;
+  }
+  
+  // --- OTHER HELPER FUNCTIONS (UNCHANGED) ---
+  
+  function handleSubscription() {
+    const emailInput = document.getElementById('emailInput');
+    const email = emailInput.value.trim();
+    if (email) {
+      const subButton = document.getElementById('subscribeButton');
+      subButton.textContent = "Subscribing...";
+      subButton.disabled = true;
+      fetch(`${API_BASE_URL}/api/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      })
+      .then(res => res.json())
+      .then(subData => {
+        subButton.textContent = "Subscribed!";
+        setTimeout(() => { subButton.textContent = "Subscribe"; subButton.disabled = false; emailInput.value = ''; }, 2000);
+      })
+      .catch(err => {
+        console.error("Subscription fetch error:", err);
+        subButton.textContent = "Error";
+        setTimeout(() => { subButton.textContent = "Subscribe"; subButton.disabled = false; }, 2000);
+      });
+    }
+  }
+  
+  function copyMainResults() {
+      const risk = document.getElementById('risk').textContent;
+      const summary = document.getElementById('summary').textContent;
+      const domainAge = document.getElementById('domainAge').textContent;
+      const mxRecords = document.getElementById('mxRecords').textContent;
+      const advice = document.getElementById('advice').textContent;
+      const indicatorsList = document.getElementById('watchFor').getElementsByTagName('li');
+      let indicatorsText = "";
+      for (let i = 0; i < indicatorsList.length; i++) {
+          indicatorsText += `- ${indicatorsList[i].textContent}\n`;
+      }
+      const formattedText = `PhishFinder Analysis\n--------------------\nRisk: ${risk}\nDomain Created: ${domainAge}\nMX Records: ${mxRecords}\n\nSummary:\n${summary}\n\nWhat to Watch For:\n${indicatorsText}\nAdvice:\n${advice}`;
+      navigator.clipboard.writeText(formattedText).then(() => {
+          updateCopyButtonState('copyButton');
+      }).catch(err => {
+          console.error('Failed to copy results: ', err);
+      });
+  }
 
-# --- EXISTING POLLING ENDPOINTS (Unchanged) ---
-@app.route("/api/check", methods=["POST"])
-def check_start():
-    if not celery: return jsonify({"error": "Celery not configured"}), 500
-    data = request.get_json()
-    user_input = data.get("prompt")
-    if not user_input:
-        return jsonify({"error": "Missing input"}), 400
-    task = standard_analysis_task.delay(user_input)
-    return jsonify({"status": "pending", "task_id": task.id}), 202
+  function copyTextFromElement(elementId, buttonId) {
+    const textToCopy = document.getElementById(elementId).value;
+    navigator.clipboard.writeText(textToCopy).then(() => {
+        updateCopyButtonState(buttonId);
+    }).catch(err => {
+        console.error('Failed to copy text: ', err);
+    });
+  }
 
-@app.route("/api/deep-check", methods=["POST"])
-def deep_check_start():
-    if not celery: return jsonify({"error": "Celery not configured"}), 500
-    data = request.get_json()
-    user_input = data.get("prompt")
-    if not user_input:
-        return jsonify({"error": "Missing input"}), 400
-    task = deep_analysis_task.delay(user_input)
-    return jsonify({"status": "pending", "task_id": task.id}), 202
-
-@app.route("/api/result/<task_id>", methods=["GET"])
-def get_result(task_id):
-    if not celery: return jsonify({"error": "Celery not configured"}), 500
-    task = celery.AsyncResult(task_id)
-    response = {}
-    if task.state == 'SUCCESS':
-        task_info = task.info if isinstance(task.info, dict) else {}
-        response = {'state': task.state, 'data': task_info.get('result')}
-    elif task.state == 'FAILURE':
-        response = {'state': task.state, 'status': str(task.info)}
-    else:
-        response = {'state': task.state, 'status': 'Processing...'}
-    return jsonify(response)
-
-
-@app.route("/api/subscribe", methods=["POST"])
-def subscribe():
-    data = request.get_json()
-    if not data or 'email' not in data:
-        return jsonify({"error": "Email is required"}), 400
-    email = data['email']
-    print(f"MANAGER: New subscription from {email}")
-    return jsonify({"message": "Subscription successful!"}), 200
-
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+  function updateCopyButtonState(buttonId) {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    const originalText = button.textContent;
+    button.textContent = "Copied!";
+    button.disabled = true;
+    setTimeout(() => {
+        button.textContent = originalText;
+        button.disabled = false;
+    }, 2000);
+  }
+});
