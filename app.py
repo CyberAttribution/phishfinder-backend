@@ -100,6 +100,7 @@ def generate_analysis_stream(user_input):
     if analysis_target in ALLOW_LIST:
         yield json.dumps({"type": "risk", "content": {"level": "Low", "score": 0, "class": "green"}}) + '\n'
         yield json.dumps({"type": "summary", "content": "This domain is on the PhishFinder allow list and is considered safe."}) + '\n'
+        yield json.dumps({"type": "advice", "content": "No specific advice needed as this is a trusted domain."}) + '\n'
         return
 
     # 3. Perform initial checks and stream results immediately
@@ -127,11 +128,11 @@ def generate_analysis_stream(user_input):
 
     # 4. Call Gemini API for the main analysis
     prompt_template = (
-        "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
+        "You are PhishFinder, a security analysis tool. Analyze the potential phishing risk of the following input: '{user_input}'. "
         "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
         "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
-        "Provide a risk score (1-100), a concise summary, a list of 5-7 relevant warning signs ('watchFor'), and brief 'advice' of 2-3 sentences for a non-technical user. "
-        "Format the entire response as a single JSON object with keys: risk_score, summary, watchFor, advice."
+        "Your response MUST be a single, valid JSON object. Provide a risk score (1-100), a concise summary, a list of 5-7 relevant warning signs ('watchFor'), and brief 'advice' of 2-3 sentences for a non-technical user. "
+        "The 'advice' field is a mandatory part of the JSON response and must always be included."
     )
     prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
     
@@ -151,16 +152,16 @@ def generate_analysis_stream(user_input):
                         "summary": {"type": "string"},
                         "watchFor": {"type": "array", "items": {"type": "string"}},
                         "advice": {"type": "string"}
-                    }
+                    },
+                    "required": ["risk_score", "summary", "watchFor", "advice"] # Explicitly require all fields
                 }
             }
         }
-        # Using 1.5 Flash for speed in streaming context
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
         
         print("STREAM: Calling Gemini API...")
         response = requests.post(url, headers=headers, json=body, timeout=60)
-        response.raise_for_status() # Raise an exception for bad status codes
+        response.raise_for_status()
 
         result = response.json()
         
@@ -188,7 +189,18 @@ def generate_analysis_stream(user_input):
             yield json.dumps({"type": "watchFor", "content": item}) + '\n'
             time.sleep(0.1)
         
-        yield json.dumps({"type": "advice", "content": gemini_data.get("advice", "N/A")}) + '\n'
+        # --- NEW: ADVICE FALLBACK LOGIC ---
+        advice_text = gemini_data.get("advice")
+        if not advice_text:
+            print("STREAM: Gemini did not provide advice. Generating fallback.")
+            if risk_score >= 80:
+                advice_text = "This shows strong indicators of a phishing attempt. Do not click any links, download attachments, or provide personal information. Block the sender immediately."
+            elif risk_score >= 50:
+                advice_text = "This shows several suspicious indicators. Proceed with extreme caution. Verify the sender through a separate, trusted channel before taking any action."
+            else:
+                advice_text = "While this appears to be safe, always remain vigilant. Double-check sender details and be wary of unexpected requests for information."
+        
+        yield json.dumps({"type": "advice", "content": advice_text}) + '\n'
 
     except requests.exceptions.RequestException as e:
         print(f"STREAM: Network error calling Gemini API: {e}")
@@ -200,7 +212,6 @@ def generate_analysis_stream(user_input):
         print(f"STREAM: Failed to decode JSON from Gemini response: {e}")
         yield json.dumps({"type": "error", "content": "The analysis service returned a malformed response."}) + '\n'
     except Exception as e:
-        # --- THIS BLOCK IS UPDATED FOR BETTER DEBUGGING ---
         import traceback
         error_details = traceback.format_exc()
         print(f"STREAM: An unexpected error occurred: {e}\n{error_details}")
