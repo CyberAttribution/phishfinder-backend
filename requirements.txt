@@ -5,5 +5,3 @@ python-whois
 dnspython
 google-cloud-storage
 gunicorn
-celery
-redis
