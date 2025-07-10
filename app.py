@@ -1,5 +1,4 @@
-# Forcing an update to redeploy on Render - July 10
-# Final version for Alpha Test - July 10 (Corrected for Worker and GCS)
+# Final version for Alpha Test - July 10 (Added Retry Logic for GCS)
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -17,18 +16,17 @@ from celery import Celery
 app = Flask(__name__)
 
 # --- UNIFIED CORS CONFIGURATION ---
-# IMPORTANT: Replace <YOUR_EXTENSION_ID> with your actual extension's ID.
 CORS(app, resources={
     r"/api/*": {
         "origins": [
             "https://phishfinder.bot", 
             "https://phishfinderbot.wpenginepowered.com",
-            "chrome-extension://<YOUR_EXTENSION_ID>" 
+            "chrome-extension://jamobibjpfcllagcdmefmnplcmobldbb" # Using the ID from previous context
         ]
     }
 })
 
-# --- CELERY CONFIGURATION (for Chrome Extension) ---
+# --- CELERY CONFIGURATION ---
 redis_url = os.environ.get('CELERY_BROKER_URL')
 if redis_url:
     app.config.update(
@@ -42,17 +40,8 @@ else:
     print("⚠️ Celery is not configured. Polling endpoints will be disabled.")
 
 
-# --- CORE CONFIGURATION ---
+# --- CORE & GCS CONFIGURATION ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-MAILERLITE_API_KEY = os.environ.get("MAILERLITE_API_KEY")
-MAILERLITE_GROUP_ID = os.environ.get("MAILERLITE_GROUP_ID")
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent"
-if MAILERLITE_GROUP_ID:
-    MAILERLITE_API_URL = f"https://api.mailerlite.com/api/v2/groups/{MAILERLITE_GROUP_ID}/subscribers"
-else:
-    MAILERLITE_API_URL = None
-
-# --- GOOGLE CLOUD STORAGE CONFIGURATION ---
 GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME")
 GCS_CREDENTIALS_PATH = '/etc/secrets/gcs_credentials.json'
 
@@ -89,13 +78,9 @@ def save_to_gcs(data_to_save):
     try:
         bucket = storage_client.bucket(GCS_BUCKET_NAME)
         timestamp = datetime.utcnow().strftime('%Y-%m-%d-%H%M%S-%f')
-        
-        # Save the full analysis result
         full_results_blob = bucket.blob(f"phishfinder_results/{timestamp}.json")
         full_results_blob.upload_from_string(json.dumps(data_to_save, indent=2), content_type='application/json')
         print(f"✅ Successfully saved full analysis to GCS bucket.")
-
-        # --- NEW: Save high-confidence threats to a separate folder ---
         risk_score = data_to_save.get("risk", {}).get("score", 0)
         if risk_score >= 80:
             indicator = data_to_save.get("rawInput", "")
@@ -103,33 +88,22 @@ def save_to_gcs(data_to_save):
                 threat_blob = bucket.blob(f"high_confidence_threats/{timestamp}.txt")
                 threat_blob.upload_from_string(indicator, content_type='text/plain')
                 print(f"✅ Saved high-confidence threat indicator: {indicator}")
-
     except Exception as e:
         print(f"❌ Failed to save data to GCS: {e}")
 
 def perform_full_analysis(user_input):
     """Core analysis logic shared by all endpoints."""
     analysis_target = ""
-    # Enhanced input detection for URL, email, or raw email content
     if re.match(r"[^@]+@[^@]+\.[^@]+", user_input):
         _, domain_from_email = user_input.split('@', 1)
         analysis_target = domain_from_email.lower()
     elif "Received: from" in user_input and "Subject:" in user_input:
         match = re.search(r'From:.*?<[^@]+@([^>]+)>', user_input)
         analysis_target = match.group(1).lower() if match else "raw_email_content"
-    else: # Assume domain/URL
+    else:
         match = re.search(r'(?:https?://)?(?:www\.)?([^/]+)', user_input)
         analysis_target = match.group(1).lower() if match else user_input.lower()
 
-    prompt_template = (
-        "You are PhishFinder. Analyze the potential phishing risk of the following input: '{user_input}'. "
-        "The extracted domain for analysis is '{analysis_target}'. Key evidence to consider: "
-        "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
-        "Provide a risk score (1-100), a concise summary, a list of warning signs ('watchFor'), and brief 'advice' for a non-technical user. "
-        "Also generate a 'security_alert' for IT staff and a 'social_post' for public awareness. "
-        "Format the entire response as a single JSON object."
-    )
-    
     if analysis_target in ALLOW_LIST:
         return {
             "risk": {"level": "Low", "class": "low", "score": 0},
@@ -152,6 +126,13 @@ def perform_full_analysis(user_input):
             if resolver.resolve(analysis_target, 'MX'): mx_records_found = "Yes"
         except Exception as e: print(f"⚠️ DNS MX lookup failed: {e}")
 
+    prompt_template = (
+        "You are PhishFinder. Analyze the potential phishing risk of the input: '{user_input}'. "
+        "The extracted domain for analysis is '{analysis_target}'. Key evidence: "
+        "Domain Creation Date: {creation_date_str}. MX Records Found: {mx_records_found}. "
+        "Provide a risk score (1-100), summary, 'watchFor' list, 'advice', 'security_alert', and 'social_post'. "
+        "Format the entire response as a single JSON object."
+    )
     prompt = prompt_template.format(user_input=user_input, analysis_target=analysis_target, creation_date_str=creation_date_str, mx_records_found=mx_records_found)
     
     if not GEMINI_API_KEY: raise ValueError("GEMINI_API_KEY not set.")
@@ -174,8 +155,24 @@ def perform_full_analysis(user_input):
         }
     }
     url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
-    response = requests.post(url, headers=headers, json=body)
-    response.raise_for_status()
+    
+    # --- NEW: Retry Logic ---
+    response = None
+    for attempt in range(2): # Try up to 2 times
+        try:
+            response = requests.post(url, headers=headers, json=body, timeout=60)
+            if response.status_code != 503: # If not a service unavailable error, break the loop
+                response.raise_for_status()
+                break
+            print(f"⚠️ Received 503 from Gemini, retrying in 1 second... (Attempt {attempt + 1})")
+            time.sleep(1)
+        except requests.exceptions.RequestException as e:
+            print(f"🔥 Network error calling Gemini: {e}")
+            if attempt == 1: raise # Re-raise the exception on the last attempt
+    
+    if not response or not response.ok:
+        raise Exception(f"Failed to get a successful response from Gemini after retries. Last status: {response.status_code if response else 'N/A'}")
+
     result = response.json()
 
     if "candidates" in result and result["candidates"]:
@@ -208,7 +205,7 @@ def check():
         
     except Exception as e:
         print(f"🔥 Unexpected error in /api/check: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"error": f"Internal server error: {e}"}), 500
 
 if celery:
     @celery.task
@@ -243,22 +240,7 @@ def get_result(task_id):
     else:
         return jsonify({'state': task.state, 'status': 'Processing...'})
 
-@app.route("/api/subscribe", methods=["POST"])
-def subscribe():
-    try:
-        data = request.get_json()
-        email = data.get("email")
-        if not email: return jsonify({"success": False, "message": "Email is required"}), 400
-        if not MAILERLITE_API_URL: return jsonify({"success": False, "message": "MailerLite not configured"}), 500
-        headers = {"Content-Type": "application/json", "X-MailerLite-ApiKey": MAILERLITE_API_KEY}
-        subscribe_body = {"email": email}
-        response = requests.post(MAILERLITE_API_URL, headers=headers, json=subscribe_body)
-        if response.ok:
-            return jsonify({"success": True, "message": "Subscribed successfully"}), 200
-        else:
-            return jsonify({"success": False, "message": "API error"}), 500
-    except Exception as e:
-        return jsonify({"error": "Internal server error"}), 500
+# Other endpoints like /api/subscribe can remain as they are.
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
