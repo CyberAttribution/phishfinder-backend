@@ -117,7 +117,7 @@ def generate_analysis_stream(user_input, model_type='flash'):
         yield json.dumps({"type": "mxRecords", "content": mx_records_found}) + '\n'
 
         # --- Call Gemini API for the main analysis ---
-        model_name = "gemini-1.5-pro-latest" if model_type == 'pro' else "gemini-1.5-flash-latest"
+        model_name = "gemini-2.5-pro" if model_type == 'pro' else "gemini-2.5-flash"
         print(f"STREAM: Using model: {model_name}")
 
         prompt = (
