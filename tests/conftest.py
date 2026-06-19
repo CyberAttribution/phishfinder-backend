@@ -25,6 +25,7 @@ os.environ.pop("GCS_BUCKET_NAME", None)
 
 import app  # noqa: E402  (import after env is set, by design)
 from verity_core import technical_intel as vc_technical_intel  # noqa: E402  (step 2 point of use)
+from verity_core import model_router as vc_model_router  # noqa: E402  (final step point of use)
 
 TESTS_DIR = pathlib.Path(__file__).parent
 GOLDEN_DIR = TESTS_DIR / "golden"
@@ -102,10 +103,13 @@ def boundaries(monkeypatch):
 
     def fake_post(url, headers=None, json=None, timeout=None):
         if state["raise"]:
-            raise app.requests.exceptions.RequestException("simulated Gemini failure")
+            raise vc_model_router.requests.exceptions.RequestException("simulated Gemini failure")
         return _FakeResponse(state["payload"])
 
-    monkeypatch.setattr(app.requests, "post", fake_post)
+    # Gemini transport now lives in verity_core.model_router (final step); patch
+    # requests.post at its point of use so the 503/retry/parse path is exercised
+    # there and the golden output stays byte-identical.
+    monkeypatch.setattr(vc_model_router.requests, "post", fake_post)
 
     class _Controller:
         def gemini_raises(self):

@@ -21,6 +21,11 @@ from verity_core import technical_intel as core_technical_intel
 # verity_core.storage. The save_to_gcs path scheme + side-effects stay here.
 from verity_core import storage as core_storage
 
+# Sprint 1 / Phase 2 (final step): Gemini structured transport (model resolution
+# + 503 retry) centralized in verity_core.model_router. The inline requests/time
+# imports above remain (now unused) until the cleanup step.
+from verity_core import model_router as core_model_router
+
 app = Flask(__name__)
 
 # --- UNIFIED CORS CONFIGURATION ---
@@ -130,7 +135,6 @@ def generate_analysis_stream(user_input, model_type='flash'):
         
         if not GEMINI_API_KEY: raise ValueError("GEMINI_API_KEY not set.")
 
-        headers = {"Content-Type": "application/json"}
         body = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
@@ -147,24 +151,11 @@ def generate_analysis_stream(user_input, model_type='flash'):
                 }
             }
         }
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
-        
-        response = None
-        for attempt in range(2): # Retry logic
-            try:
-                response = requests.post(url, headers=headers, json=body, timeout=60)
-                if response.status_code != 503:
-                    response.raise_for_status()
-                    break
-                print(f"⚠️ Received 503 from Gemini, retrying... (Attempt {attempt + 1})")
-                time.sleep(1)
-            except requests.exceptions.RequestException as e:
-                if attempt == 1: raise e
 
-        if not response or not response.ok:
-            raise Exception(f"Failed to get a successful response from Gemini. Status: {response.status_code if response else 'N/A'}")
-
-        result = response.json()
+        # Transport (model resolution + 2-attempt 503 retry + non-OK guard)
+        # centralized in verity_core.model_router. model_name is resolved/logged
+        # above and passed through; the candidates parsing below stays here.
+        result = core_model_router.call_gemini_structured(body, model_name=model_name)
 
         if "candidates" in result and result["candidates"]:
             gemini_data = json.loads(result["candidates"][0]["content"]["parts"][0]["text"])
