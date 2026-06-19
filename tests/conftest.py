@@ -24,6 +24,7 @@ os.environ.setdefault("GEMINI_API_KEY", "test-key-not-used")
 os.environ.pop("GCS_BUCKET_NAME", None)
 
 import app  # noqa: E402  (import after env is set, by design)
+from verity_core import technical_intel as vc_technical_intel  # noqa: E402  (step 2 point of use)
 
 TESTS_DIR = pathlib.Path(__file__).parent
 GOLDEN_DIR = TESTS_DIR / "golden"
@@ -83,13 +84,16 @@ def boundaries(monkeypatch):
     whois_sample = _load_fixture("whois_sample.json")
     creation_dt = datetime.strptime(whois_sample["creation_date"], "%Y-%m-%d")
 
-    # WHOIS -> fixed creation date object (only reached for non-raw-email).
+    # WHOIS + DNS now live in verity_core.technical_intel (Phase 2 step 2);
+    # patch the underlying boundaries at their new point of use so the moved
+    # get_domain_creation_date / has_mx_records logic actually runs and the
+    # golden output (domainAge "2024-11-02", mxRecords "Yes") stays identical.
     monkeypatch.setattr(
-        app.whois, "whois", lambda target: _FakeWhois(creation_dt)
+        vc_technical_intel.whois, "whois", lambda target: _FakeWhois(creation_dt)
     )
-    # DNS MX -> truthy answer so the live code reports "Yes".
     monkeypatch.setattr(
-        app.resolver, "resolve", lambda target, rtype: ["10 mail.example.test."]
+        vc_technical_intel.dns.resolver, "resolve",
+        lambda target, rtype: ["10 mail.example.test."],
     )
     # GCS -> hard no-op (also naturally disabled, but make it explicit/offline).
     monkeypatch.setattr(app, "save_to_gcs", lambda *a, **k: None)

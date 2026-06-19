@@ -12,6 +12,11 @@ from dns import resolver
 from google.cloud import storage
 from google.oauth2 import service_account
 
+# Sprint 1 / Phase 2 (step 2): WHOIS creation-date + MX checks centralized in
+# verity_core. The inline whois/resolver imports above remain (now unused) and
+# are removed in the cleanup step per the two-step-delete rule.
+from verity_core import technical_intel as core_technical_intel
+
 app = Flask(__name__)
 
 # --- UNIFIED CORS CONFIGURATION ---
@@ -101,19 +106,12 @@ def generate_analysis_stream(user_input, model_type='flash'):
         # --- Perform initial checks and stream results immediately ---
         creation_date_str = "N/A"
         if analysis_target != "raw_email_content":
-            try:
-                domain_info = whois.whois(analysis_target)
-                creation_date = domain_info.creation_date[0] if isinstance(domain_info.creation_date, list) else domain_info.creation_date
-                if creation_date: creation_date_str = creation_date.strftime("%Y-%m-%d")
-            except Exception as e: print(f"⚠️ WHOIS lookup failed: {e}")
+            creation_date_str = core_technical_intel.get_domain_creation_date(analysis_target)
         yield json.dumps({"type": "domainAge", "content": creation_date_str}) + '\n'
-        
+
         mx_records_found = "N/A"
         if analysis_target != "raw_email_content":
-            try:
-                if resolver.resolve(analysis_target, 'MX'): mx_records_found = "Yes"
-                else: mx_records_found = "No"
-            except Exception as e: mx_records_found = "No"
+            mx_records_found = core_technical_intel.has_mx_records(analysis_target)
         yield json.dumps({"type": "mxRecords", "content": mx_records_found}) + '\n'
 
         # --- Call Gemini API for the main analysis ---
