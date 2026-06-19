@@ -7,5 +7,5 @@ gunicorn
 
 # Shared Core, pinned to the immutable Sprint 1 tag. No [scraping] extra:
 # PhishFinder never needs nodriver.
-# NOTE: set <REMOTE> to the verity-core git remote before deploying.
-verity-core @ git+https://<REMOTE>/verity-core.git@v0.2.0-sprint1
+# NOTE: verity-core is a PRIVATE repo; Render needs deploy-key/PAT access to it.
+verity-core @ git+https://github.com/CyberAttribution/verity-core.git@v0.2.0-sprint1
