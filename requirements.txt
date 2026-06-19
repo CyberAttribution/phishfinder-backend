@@ -1,7 +1,11 @@
+# Service-direct dependencies. Shared boundaries (technical intel, storage,
+# Gemini transport) now come from verity-core.
 Flask
 Flask-Cors
 requests
-python-whois
-dnspython
-google-cloud-storage
 gunicorn
+
+# Shared Core, pinned to the immutable Sprint 1 tag. No [scraping] extra:
+# PhishFinder never needs nodriver.
+# NOTE: set <REMOTE> to the verity-core git remote before deploying.
+verity-core @ git+https://<REMOTE>/verity-core.git@v0.2.0-sprint1

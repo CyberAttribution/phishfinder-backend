@@ -1,29 +1,15 @@
 # PhishFinder Backend - Phoenix Version - July 10, 2025
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
-import requests
 import json
 import os
-import time
 import re
-import whois
 from datetime import datetime
-from dns import resolver
-from google.cloud import storage
-from google.oauth2 import service_account
 
-# Sprint 1 / Phase 2 (step 2): WHOIS creation-date + MX checks centralized in
-# verity_core. The inline whois/resolver imports above remain (now unused) and
-# are removed in the cleanup step per the two-step-delete rule.
+# Shared Core (verity_core): technical intel (WHOIS/MX), GCS storage, and the
+# Gemini structured model router. PhishFinder installs plain verity-core.
 from verity_core import technical_intel as core_technical_intel
-
-# Sprint 1 / Phase 2 (step 3): GCS auth + upload transport centralized in
-# verity_core.storage. The save_to_gcs path scheme + side-effects stay here.
 from verity_core import storage as core_storage
-
-# Sprint 1 / Phase 2 (final step): Gemini structured transport (model resolution
-# + 503 retry) centralized in verity_core.model_router. The inline requests/time
-# imports above remain (now unused) until the cleanup step.
 from verity_core import model_router as core_model_router
 
 app = Flask(__name__)
