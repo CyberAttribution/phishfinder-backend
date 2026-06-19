@@ -1,0 +1,13 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\"risk_score\": 87, \"summary\": \"This domain shows strong indicators of a credential-harvesting phishing operation.\", \"watchFor\": [\"Lookalike domain spelling\", \"Urgent account-verification language\", \"Mismatched sender and link domains\"], \"advice\": \"Do not enter credentials. Navigate to the official site directly and report the message.\", \"security_alert\": \"High-confidence phishing indicator detected for the submitted target.\", \"social_post\": \"Heads up: a fake 'account verification' page is circulating. Always type the real address yourself. #PhishFinder\"}"
+          }
+        ]
+      }
+    }
+  ]
+}

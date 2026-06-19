@@ -1,0 +1,2 @@
+# Phase 0 dev/test tooling only — not deployed.
+pytest>=8,<9
