@@ -17,6 +17,10 @@ from google.oauth2 import service_account
 # are removed in the cleanup step per the two-step-delete rule.
 from verity_core import technical_intel as core_technical_intel
 
+# Sprint 1 / Phase 2 (step 3): GCS auth + upload transport centralized in
+# verity_core.storage. The save_to_gcs path scheme + side-effects stay here.
+from verity_core import storage as core_storage
+
 app = Flask(__name__)
 
 # --- UNIFIED CORS CONFIGURATION ---
@@ -38,16 +42,11 @@ GCS_BUCKET_NAME = os.environ.get("GCS_BUCKET_NAME")
 GCS_CREDENTIALS_PATH = '/etc/secrets/gcs_credentials.json'
 
 # --- GOOGLE CLOUD STORAGE INITIALIZATION ---
-storage_client = None
-if os.path.exists(GCS_CREDENTIALS_PATH):
-    try:
-        credentials = service_account.Credentials.from_service_account_file(GCS_CREDENTIALS_PATH)
-        storage_client = storage.Client(credentials=credentials)
-        print("✅ Successfully initialized Google Cloud Storage client.")
-    except Exception as e:
-        print(f"❌ Failed to initialize GCS client: {e}")
-else:
-    print("⚠️ GCS credentials file not found. Data collection will be disabled.")
+# Auth + init delegated to verity_core.storage (PhishFinder = service-account
+# file mode). Best-effort: a disabled handle when unconfigured.
+_gcs = core_storage.get_handle(
+    bucket_name=GCS_BUCKET_NAME, credentials_path=GCS_CREDENTIALS_PATH
+)
 
 # --- ALLOW-LIST & HELPER FUNCTIONS ---
 ALLOW_LIST = {
@@ -64,18 +63,21 @@ def get_risk_details(score):
     else: return {"level": "Low", "class": "low"}
 
 def save_to_gcs(data_to_save):
-    if not storage_client or not GCS_BUCKET_NAME: return
+    if not _gcs.enabled: return
     try:
-        bucket = storage_client.bucket(GCS_BUCKET_NAME)
         timestamp = datetime.utcnow().strftime('%Y-%m-%d-%H%M%S-%f')
-        full_results_blob = bucket.blob(f"phishfinder_results/{timestamp}.json")
-        full_results_blob.upload_from_string(json.dumps(data_to_save, indent=2), content_type='application/json')
+        core_storage.upload_string(
+            _gcs, f"phishfinder_results/{timestamp}.json",
+            json.dumps(data_to_save, indent=2), 'application/json',
+        )
         print(f"✅ Saved full analysis to GCS.")
         if data_to_save.get("risk", {}).get("score", 0) >= 80:
             indicator = data_to_save.get("rawInput", "")
             if indicator:
-                threat_blob = bucket.blob(f"high_confidence_threats/{timestamp}.txt")
-                threat_blob.upload_from_string(indicator, content_type='text/plain')
+                core_storage.upload_string(
+                    _gcs, f"high_confidence_threats/{timestamp}.txt",
+                    indicator, 'text/plain',
+                )
                 print(f"✅ Saved high-confidence threat.")
     except Exception as e:
         print(f"❌ Failed to save data to GCS: {e}")
