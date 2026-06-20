@@ -111,7 +111,13 @@ def generate_analysis_stream(user_input, model_type='flash'):
         model_name = "gemini-2.5-pro" if model_type == 'pro' else "gemini-2.5-flash"
         print(f"STREAM: Using model: {model_name}")
 
+        current_utc = datetime.utcnow().isoformat() + "Z"
         prompt = (
+            f"Current date/time at analysis: {current_utc}. Treat WHOIS dates after this "
+            f"timestamp as future dates. Do not infer that recent or post-training dates are "
+            f"impossible merely because they are after the model's training cutoff. The "
+            f"Domain Created date below is observed technical evidence collected at analysis "
+            f"time, not model memory. "
             f"You are PhishFinder, an expert cybersecurity analyst. {prompt_context} "
             f"Analyze the following input: '{user_input}'. The extracted domain is '{analysis_target}'. "
             f"Key evidence: Domain Created: {creation_date_str}, MX Records Found: {mx_records_found}. "
